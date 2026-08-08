@@ -633,7 +633,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
       <option value="5">5 张</option>
     </select>
   </div>
-  <p class="kw-tip" style="margin:-2px 0 10px;">浏览器限制连续下载，每存满一批会暂停，点「继续」自动保存下一批；vivo 浏览器最大支持 5。</p>
+  <p class="kw-tip" style="margin:-2px 0 10px;">3 张及以下直接逐张保存进相册；超过 3 张自动打包成 .zip 一次下载（浏览器限制连续逐张下载，打包可一次全拿到）。</p>
   <div class="nav">
     <button class="btn sec" id="back2">上一步</button>
     <button class="btn sec" id="btnSaveAll">💾 保存全部</button>
@@ -3172,6 +3172,86 @@ function downloadBlob(blob, name) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 15000);
 }
+/* ================= ZIP 打包（store 不压缩，PNG 本身已压缩）================= */
+/* 手机浏览器限制连续逐张下载（如 vivo 每 1 分钟约 3 次），张数多时打包成一个 zip 只下载一次，绕开限制 */
+function crc32(u8) {
+  let c = ~0;
+  for (let i = 0; i < u8.length; i++) {
+    c ^= u8[i];
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1));
+  }
+  return (~c) >>> 0;
+}
+function zipMake(files) {   // files: [{name, data(Uint8Array)}] -> Blob(zip)
+  const enc = new TextEncoder();
+  const chunks = [], central = [];
+  let offset = 0;
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = (((d.getFullYear() - 1980) & 0x7F) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const f of files) {
+    const nameU8 = enc.encode(f.name);
+    const crc = crc32(f.data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true); lh.setUint16(6, 0, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, f.data.length, true); lh.setUint32(22, f.data.length, true);
+    lh.setUint16(26, nameU8.length, true); lh.setUint16(28, 0, true);
+    chunks.push(lh.buffer, nameU8.buffer, f.data.buffer);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, crc, true);
+    ch.setUint32(20, f.data.length, true); ch.setUint32(24, f.data.length, true);
+    ch.setUint16(28, nameU8.length, true); ch.setUint16(30, 0, true);
+    ch.setUint16(32, 0, true); ch.setUint16(34, 0, true);
+    ch.setUint16(36, 0, true); ch.setUint32(38, 0, true);
+    ch.setUint32(42, offset, true);
+    central.push(ch.buffer, nameU8.buffer);
+    offset += 30 + nameU8.length + f.data.length;
+  }
+  const cdSize = central.reduce((s, c) => s + c.byteLength, 0);
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(4, 0, true); eo.setUint16(6, 0, true);
+  eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true);
+  eo.setUint32(12, cdSize, true); eo.setUint32(16, offset, true);
+  eo.setUint16(20, 0, true);
+  return new Blob([...chunks, ...central, eo], { type: "application/zip" });
+}
+function saveAllZip(list) {
+  const n = list.length;
+  openSaveModal();
+  setSaveBtn("正在打包…", true);
+  updateSaveProgress(0, n, "正在生成 " + n + " 张图片，请稍候…");
+  (async () => {
+    try {
+      const files = [];
+      for (let i = 0; i < n; i++) {
+        const p = list[i];
+        updateSaveProgress(i, n, "正在处理 " + (i + 1) + "/" + n + "：" + p.name);
+        await yieldUi();
+        const blob = await canvasToBlob(renderOutput(p));
+        files.push({ name: outName(p), data: new Uint8Array(await blob.arrayBuffer()) });
+      }
+      updateSaveProgress(n, n, "正在打包成压缩包…");
+      await yieldUi();
+      const zip = zipMake(files);
+      downloadBlob(zip, "打码图片_" + n + "张.zip");
+      updateSaveProgress(n, n, "已下载压缩包（含 " + n + " 张图）。浏览器限制逐张下载，打包可一次全拿到。");
+      setSaveBtn("完成", false, closeSaveModal);
+      saveCtx = null;
+    } catch (e) {
+      updateSaveProgress(0, n, "保存出错：" + ((e && e.message) || e));
+      setSaveBtn("完成", false, closeSaveModal);
+      saveCtx = null;
+    }
+  })();
+}
 /* 保存进度弹窗 */
 function openSaveModal() {
   $("saveModal").classList.remove("hidden");
@@ -3234,7 +3314,13 @@ async function runSaveBatch() {
     saveCtx = null;
   }
 }
-function saveAll() { savePhotos(S.photos); }
+function saveAll() {
+  const list = S.photos.filter(Boolean);
+  if (!list.length) { toast("请先选择照片"); return; }
+  /* 3 张及以下逐张下载直接进相册；超过 3 张打包成 zip 一次下载（vivo 等浏览器限制连续逐张下载） */
+  if (list.length > 3) saveAllZip(list);
+  else savePhotos(list);
+}
 function canvasToBlob(c) {
   return new Promise((resolve) => c.toBlob(resolve, "image/png"));
 }
