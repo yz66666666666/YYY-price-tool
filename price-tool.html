@@ -643,7 +643,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 
 <footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
   图片仅在手机本地处理，不会上传 · 完全离线可用<br>
-  <span style="opacity:.85;">版本 v1.0</span>
+  <span style="opacity:.85;">版本 v1.1</span>
 </footer>
 
 <input type="file" id="fileInput" multiple hidden>
@@ -2831,15 +2831,21 @@ function confirmCopy() {
 }
 /* 导出当前全部设置（含方案），便于换机迁移或设为默认 */
 /* mode: "lite"=仅文字设置（不含图片，文本小）；"full"=完整备份（含三张图片 dataURL） */
+function stripImgs(s) {
+  if (!s) return s;
+  if (s.wmImg) s.wmImg.data = "";
+  if (s.kw) s.kw.wmImgData = "";
+  s.maskImgData = "";
+  return s;
+}
 function buildExportData(mode) {
-  let settings = S.settings;
-  if (mode === "lite") {
-    settings = JSON.parse(JSON.stringify(S.settings));
-    if (settings.wmImg) settings.wmImg.data = "";
-    if (settings.kw) settings.kw.wmImgData = "";
-    settings.maskImgData = "";
+  if (mode !== "lite") {
+    return { settings: S.settings, schemes, curScheme, schemeNames, exportMode: mode };
   }
-  return { settings, schemes, curScheme, schemeNames, exportMode: mode };
+  /* 仅设置：当前方案 + 其他所有方案里的图片 dataURL 全部清空 */
+  const settings = stripImgs(JSON.parse(JSON.stringify(S.settings)));
+  const s2 = JSON.parse(JSON.stringify(schemes)).map(stripImgs);
+  return { settings, schemes: s2, curScheme, schemeNames, exportMode: mode };
 }
 function refreshExportText() {
   $("exportText").value = JSON.stringify(buildExportData($("exportMode").value));
