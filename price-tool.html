@@ -711,8 +711,12 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
   <div id="importMask" onclick="closeImport()"></div>
   <div id="importPanel">
     <div id="importHead"><b>⬆ 导入设置</b><button id="importClose" onclick="closeImport()" aria-label="关闭">✕</button></div>
-    <p class="kw-tip" style="margin:0 0 8px;">换浏览器/换手机后：先在原浏览器点「⬇ 导出」复制内容，再在这里粘贴，点「导入」即可恢复全部设置（含方案、关键词、图片素材）。</p>
-    <textarea id="importText" spellcheck="false" placeholder="粘贴导出的内容到这里…"></textarea>
+    <p class="kw-tip" style="margin:0 0 8px;">换浏览器/换手机后：先在原设备点「⬇ 导出」→「💾 下载文件」，再在这里点「📁 选择文件」导入下载的 .json 文件即可恢复全部设置（含方案、关键词、图片素材）。</p>
+    <div class="nav" style="margin:0 0 8px;">
+      <button class="btn sec" id="btnImportFile">📁 选择文件</button>
+      <input type="file" id="importFileInput" accept=".json,application/json" style="display:none;">
+    </div>
+    <textarea id="importText" spellcheck="false" placeholder="也可以把导出的内容直接粘贴到这里…"></textarea>
     <div class="nav">
       <button class="btn sec" id="btnImportCancel">取消</button>
       <button class="btn" id="btnImportOk">导入</button>
@@ -2912,6 +2916,16 @@ function openImport() {
   $("importModal").classList.remove("hidden");
 }
 function closeImport() { $("importModal").classList.add("hidden"); }
+/* 读取用户选择的 .json 导出文件并导入（免复制粘贴） */
+function importFromFile() {
+  const inp = $("importFileInput");
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { $("importText").value = rd.result; doImport(); inp.value = ""; };
+  rd.onerror = () => toast("文件读取失败");
+  rd.readAsText(f, "utf-8");
+}
 function doImport() {
   const raw = ($("importText").value || "").trim();
   if (!raw) { toast("请先粘贴导出的内容"); return; }
@@ -3286,6 +3300,8 @@ function bindUI() {
   $("btnImport").onclick = openImport;
   $("btnImportCancel").onclick = closeImport;
   $("btnImportOk").onclick = doImport;
+  $("btnImportFile").onclick = () => $("importFileInput").click();
+  $("importFileInput").onchange = importFromFile;
   $("btnSaveAll").onclick = saveAll;
   $("btnSaveEdit").onclick = () => savePhotos([curPhoto()]);
 }
