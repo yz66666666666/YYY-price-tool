@@ -690,7 +690,14 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
   <div id="exportMask" onclick="closeExport()"></div>
   <div id="exportPanel">
     <div id="exportHead"><b>⬇ 导出当前全部设置</b><button id="exportClose" onclick="closeExport()" aria-label="关闭">✕</button></div>
-    <p class="kw-tip" style="margin:0 0 8px;">这是当前全部设置（含方案），点「复制」后粘贴发给我，我会把它设成以后每次更新的默认值。</p>
+    <p class="kw-tip" style="margin:0 0 8px;">点「复制」后粘贴发给我，我会把它设成以后每次更新的默认值。</p>
+    <div class="set">
+      <label style="width:auto; margin-right:8px;">导出内容</label>
+      <select id="exportMode" style="flex:1;">
+        <option value="lite" selected>仅设置（推荐，不含图片，文本小好复制）</option>
+        <option value="full">完整备份（含三张图片，文本极长）</option>
+      </select>
+    </div>
     <textarea id="exportText" readonly spellcheck="false"></textarea>
     <div class="nav">
       <button class="btn sec" id="btnExportClose">关闭</button>
@@ -2822,9 +2829,22 @@ function confirmCopy() {
   toast("已复制到 " + n + " 个方案");
 }
 /* 导出当前全部设置（含方案），便于换机迁移或设为默认 */
+/* mode: "lite"=仅文字设置（不含图片，文本小）；"full"=完整备份（含三张图片 dataURL） */
+function buildExportData(mode) {
+  let settings = S.settings;
+  if (mode === "lite") {
+    settings = JSON.parse(JSON.stringify(S.settings));
+    if (settings.wmImg) settings.wmImg.data = "";
+    if (settings.kw) settings.kw.wmImgData = "";
+    settings.maskImgData = "";
+  }
+  return { settings, schemes, curScheme, schemeNames, exportMode: mode };
+}
+function refreshExportText() {
+  $("exportText").value = JSON.stringify(buildExportData($("exportMode").value));
+}
 function openExport() {
-  const data = { settings: S.settings, schemes, curScheme, schemeNames };
-  $("exportText").value = JSON.stringify(data);
+  refreshExportText();
   $("exportModal").classList.remove("hidden");
 }
 function closeExport() { $("exportModal").classList.add("hidden"); }
@@ -2875,7 +2895,16 @@ function doImport() {
   try { data = JSON.parse(raw); } catch (e) { toast("内容不是有效的导出数据"); return; }
   if (!data || typeof data !== "object" || !data.settings) { toast("格式不对，请粘贴「⬇ 导出」复制的内容"); return; }
   try {
-    S.settings = mergeSettings(data.settings);
+    const ds = data.settings || {};
+    const hasImg = !!(ds.wmImg && ds.wmImg.data) || !!(ds.kw && ds.kw.wmImgData) || !!ds.maskImgData;
+    S.settings = mergeSettings(ds);
+    if (!hasImg) {
+      /* 轻量导出不含图片：清掉本地残留图片，避免误用旧图 */
+      if (S.settings.wmImg) S.settings.wmImg.data = "";
+      if (S.settings.kw) S.settings.kw.wmImgData = "";
+      S.settings.maskImgData = "";
+      S.wmImgEl = null; S.kwWmImgEl = null; S.maskImgEl = null;
+    }
     if (Array.isArray(data.schemes)) {
       schemes = data.schemes.map(s => s || null);
       if (schemes.length) {
@@ -2889,7 +2918,7 @@ function doImport() {
     loadImageEls();
     updateSettingsUI();
     renderSchemeBtns();
-    toast("导入成功，设置已恢复");
+    toast(hasImg ? "导入成功，设置已恢复（含图片）" : "导入成功。图片水印/关键词水印图/打码素材需重新上传");
     closeImport();
   } catch (e) {
     toast("导入失败：" + ((e && e.message) || e));
@@ -3228,6 +3257,7 @@ function bindUI() {
   $("btnExport").onclick = openExport;
   $("btnExportClose").onclick = closeExport;
   $("btnExportCopy").onclick = copyExport;
+  $("exportMode").onchange = refreshExportText;
   $("btnImport").onclick = openImport;
   $("btnImportCancel").onclick = closeImport;
   $("btnImportOk").onclick = doImport;
