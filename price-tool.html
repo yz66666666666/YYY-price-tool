@@ -643,7 +643,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 
 <footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
   图片仅在手机本地处理，不会上传 · 完全离线可用<br>
-  <span style="opacity:.85;">版本 <span id="verText">v1.2</span></span>
+  <span style="opacity:.85;">版本 <span id="verText">v1.3</span></span>
 </footer>
 
 <input type="file" id="fileInput" multiple hidden>
@@ -770,7 +770,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 <script>
 "use strict";
 /* 工具版本号：每次更新递增（页脚与导出文件名共用） */
-const TOOL_VER = "v1.2";
+const TOOL_VER = "v1.3";
 /* ================= 内嵌引擎资源（由构建脚本注入；PaddleOCR + onnxruntime-web，完全离线） ================= */
 let ORT_JS = "";
 let ORT_WASM_GZ = "";
@@ -779,6 +779,9 @@ let REC_ONNX_GZ = "";
 
 /* ================= 外部资源加载（从同目录 fetch 二进制文件） ================= */
 let _resCache = {};
+/* 下载进度累计：本次会话所有文件的总字节/已完成字节（只统计真正从网络下载的部分，缓存命中的不计入） */
+let _dl = { total: 0, done: 0 };
+function fmtSize(b) { return (b / 1048576).toFixed(1) + " MB"; }
 async function fetchBinary(name) {
   if (_resCache[name]) return _resCache[name];
   /* 优先读浏览器本地数据库缓存：模型只下载一次，之后打开页面直接从本地读，不再联网下载 */
@@ -787,13 +790,39 @@ async function fetchBinary(name) {
     const hit = await idbGetModel(key);
     if (hit) { _resCache[name] = hit; return hit; }
   } catch (e) {}
+  if ($("procOverlay").classList.contains("hidden")) showProc("正在下载识别引擎…", 0);
   const url = name;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("加载失败: " + name + " (" + resp.status + ")");
-  const buf = await resp.arrayBuffer();
-  _resCache[name] = buf;
-  try { await idbPutModel(key, buf); } catch (e) {}
-  return buf;
+  /* 流式读取：边下边更新进度条（用 Content-Length 算总进度） */
+  const total = parseInt(resp.headers.get("content-length") || "0", 10) || 0;
+  _dl.total += total;
+  let ab;
+  if (!resp.body || typeof resp.body.getReader !== "function") {
+    /* 降级：浏览器不支持流式读取时一次性读完（无逐字节进度，但保证可用） */
+    ab = await resp.arrayBuffer();
+    _dl.done += ab.byteLength;
+  } else {
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      received += value.byteLength;
+      _dl.done += value.byteLength;
+      const pct = _dl.total ? Math.round(_dl.done / _dl.total * 100) : 0;
+      updateProc("正在下载识别引擎 " + fmtSize(_dl.done) + " / " + fmtSize(_dl.total), pct);
+    }
+    const out = new Uint8Array(received);
+    let off = 0;
+    for (const c of chunks) { out.set(c, off); off += c.byteLength; }
+    ab = out.buffer;
+  }
+  _resCache[name] = ab;
+  try { await idbPutModel(key, ab); } catch (e) {}
+  return ab;
 }
 async function fetchText(name) {
   if (_resCache[name]) return _resCache[name];
