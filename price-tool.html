@@ -643,7 +643,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 
 <footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
   图片仅在手机本地处理，不会上传 · 完全离线可用<br>
-  <span style="opacity:.85;">版本 <span id="verText">v1.1</span></span>
+  <span style="opacity:.85;">版本 <span id="verText">v1.2</span></span>
 </footer>
 
 <input type="file" id="fileInput" multiple hidden>
@@ -770,7 +770,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 <script>
 "use strict";
 /* 工具版本号：每次更新递增（页脚与导出文件名共用） */
-const TOOL_VER = "v1.1";
+const TOOL_VER = "v1.2";
 /* ================= 内嵌引擎资源（由构建脚本注入；PaddleOCR + onnxruntime-web，完全离线） ================= */
 let ORT_JS = "";
 let ORT_WASM_GZ = "";
@@ -781,11 +781,18 @@ let REC_ONNX_GZ = "";
 let _resCache = {};
 async function fetchBinary(name) {
   if (_resCache[name]) return _resCache[name];
+  /* 优先读浏览器本地数据库缓存：模型只下载一次，之后打开页面直接从本地读，不再联网下载 */
+  const key = "remote:" + MODEL_CACHE_VER + ":" + name;
+  try {
+    const hit = await idbGetModel(key);
+    if (hit) { _resCache[name] = hit; return hit; }
+  } catch (e) {}
   const url = name;
   const resp = await fetch(url);
   if (!resp.ok) throw new Error("加载失败: " + name + " (" + resp.status + ")");
   const buf = await resp.arrayBuffer();
   _resCache[name] = buf;
+  try { await idbPutModel(key, buf); } catch (e) {}
   return buf;
 }
 async function fetchText(name) {
