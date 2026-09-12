@@ -1,0 +1,3552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>价格打码 · 水印工具</title>
+<style>
+:root{
+  --green:#16a34a; --green-d:#15803d; --bg:#f4f6f5; --card:#fff;
+  --txt:#1f2937; --mut:#6b7280; --line:#e5e7eb; --red:#dc2626; --blue:#2563eb;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{margin:0; padding:0;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg); color:var(--txt); font-size:15px;
+  padding-bottom:env(safe-area-inset-bottom);
+  overflow-x:hidden;
+}
+button{font-family:inherit; cursor:pointer;}
+.hidden{display:none!important;}
+/* ---------- header ---------- */
+header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 16px; background:var(--card); border-bottom:1px solid var(--line);
+  position:sticky; top:0; z-index:50;
+}
+.brand{font-weight:700; font-size:17px;}
+.brand span{color:var(--green);}
+#btnExport{border:1px solid var(--line); background:#fff; color:var(--txt); border-radius:8px;
+  font-size:12px; padding:5px 10px; flex:none;}
+#engineStatus{
+  font-size:12px; color:var(--mut); display:flex; align-items:center; gap:6px;
+}
+#engineStatus::before{
+  content:""; width:8px; height:8px; border-radius:50%; background:#d1d5db; flex:none;
+}
+#engineStatus.ready::before{background:var(--green);}
+#engineStatus.err::before{background:var(--red);}
+#engineStatus.busy::before{background:#f59e0b; animation:blink 1s infinite;}
+@keyframes blink{50%{opacity:.3;}}
+/* ---------- steps ---------- */
+.steps{
+  display:flex; background:var(--card); border-bottom:1px solid var(--line);
+  position:sticky; top:52px; z-index:40;
+}
+.steps .step{
+  flex:1; text-align:center; padding:10px 0 8px; font-size:13px; color:var(--mut);
+  border-bottom:3px solid transparent;
+}
+.steps .step.active{color:var(--green); border-bottom-color:var(--green); font-weight:600;}
+/* ---------- sections ---------- */
+section{max-width:720px; margin:0 auto; padding:16px;}
+.card{background:var(--card); border-radius:14px; padding:16px; margin-bottom:16px;
+  box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.card h3{margin:0 0 12px; font-size:15px;}
+.btn{
+  display:block; width:100%; border:none; border-radius:12px; padding:14px;
+  font-size:16px; font-weight:600; text-align:center; background:var(--green); color:#fff;
+}
+.btn.ghost{background:#eef2f0; color:var(--txt);}
+.btn.sec{background:#fff; color:var(--txt); border:1px solid var(--line);}
+.btn:disabled{opacity:.45; cursor:not-allowed;}
+.btn + .btn{margin-top:10px;}
+.hint{color:var(--mut); font-size:12px; text-align:center; margin:10px 0 0;}
+/* thumbs */
+.thumbs{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px;}
+#thumbsHint{color:var(--green); font-size:12px; text-align:center; margin:0 0 8px;}
+.thumbs .th{position:relative; border-radius:10px; overflow:hidden; border:2px solid transparent;}
+.thumbs .th img{width:100%; height:96px; object-fit:cover; display:block; background:#eee;}
+.thumbs .th .tag{
+  position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.55); color:#fff;
+  font-size:11px; padding:2px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.thumbs .th .rm{
+  position:absolute; top:4px; right:4px; width:22px; height:22px; border-radius:50%;
+  background:rgba(0,0,0,.55); color:#fff; border:none; font-size:13px; line-height:1;
+}
+.thumbs .th.cur{border-color:var(--green);}
+/* progress */
+.bar{background:#e5e7eb; border-radius:8px; height:10px; overflow:hidden; margin:12px 0 6px;}
+.bar>div{height:100%; width:0; background:var(--green); border-radius:8px; transition:width .2s;}
+#progressText{font-size:13px; color:var(--mut); text-align:center;}
+/* 处理中全屏遮罩：点击后立即出现，避免识别耗时期间误以为卡死 */
+#procOverlay{position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center;}
+#procMask{position:absolute; inset:0; background:rgba(0,0,0,.55);}
+#procBox{position:relative; width:min(320px,82vw); background:var(--card); border-radius:16px;
+  padding:28px 22px 22px; text-align:center; box-shadow:0 10px 34px rgba(0,0,0,.3);}
+#procSpin{width:46px; height:46px; border:4px solid var(--line); border-top-color:var(--green);
+  border-radius:50%; margin:0 auto 16px; animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+#procText{font-size:14px; color:var(--txt); margin-bottom:14px; word-break:break-all; line-height:1.4;}
+#procOverlay .bar{background:#e5e7eb; border-radius:8px; height:8px; overflow:hidden; margin:0;}
+#procBar{height:100%; width:0; background:var(--green); border-radius:8px; transition:width .2s;}
+/* editor canvas */
+.canvas-wrap{
+  position:relative; background:#0f1115; border-radius:14px; overflow:hidden;
+  margin-bottom:10px; touch-action:none;
+}
+#editor{display:block; width:100%; touch-action:none;}
+#zoomBtns{
+  position:absolute; right:8px; top:8px; display:flex; flex-direction:column; gap:6px; z-index:5;
+}
+#zoomBtns button{
+  width:38px; height:38px; border-radius:10px; border:none; background:rgba(255,255,255,.92);
+  font-size:17px; font-weight:700; color:var(--txt); box-shadow:0 1px 3px rgba(0,0,0,.3);
+}
+#delFloat{
+  position:absolute; top:8px; left:50%; transform:translateX(-50%); z-index:5;
+  background:var(--red); color:#fff; border:none; border-radius:20px; padding:8px 16px;
+  font-size:13px; font-weight:600; box-shadow:0 2px 6px rgba(0,0,0,.3);
+}
+/* toolbar */
+.toolbar{display:flex; gap:8px; margin-bottom:10px;}
+.toolbar .btn{flex:1; padding:10px; font-size:14px;}
+/* box list */
+.boxlist{margin:10px 0;}
+.bi{
+  display:flex; align-items:center; gap:8px; background:var(--card); border-radius:10px;
+  padding:8px 12px; margin-bottom:6px; border:1px solid var(--line);
+}
+.bi .chk{width:20px; height:20px; accent-color:var(--green); flex:none;}
+.bi .nm{flex:1; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bi .sz{color:var(--mut); font-size:12px; flex:none;}
+/* settings */
+.set{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+.set label{flex:none; width:64px; color:var(--mut); font-size:13px;}
+.set input[type=range]{flex:1;}
+.set input[type=text], .set select{
+  flex:1; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:15px; min-width:0;
+}
+.set .val{flex:none; width:44px; text-align:right; color:var(--mut); font-size:12px;}
+.set input[type=color]{width:44px; height:32px; border:none; background:none; padding:0; flex:none;}
+label.switch{position:relative; width:44px; height:26px; flex:none; cursor:pointer;}
+.switch input{position:absolute; opacity:0; width:0; height:0; pointer-events:none;}
+.switch .sl{
+  position:absolute; inset:0; background:#d1d5db; border-radius:26px; transition:.2s;
+}
+.switch .sl::before{
+  content:""; position:absolute; width:20px; height:20px; border-radius:50%;
+  background:#fff; top:3px; left:3px; transition:.2s;
+}
+.switch input:checked + .sl{background:var(--green);}
+.switch input:checked + .sl::before{transform:translateX(18px);}
+.pos9{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:4px;}
+.pos9 button{
+  padding:8px 0; border-radius:8px; border:1px solid var(--line); background:#fff; font-size:12px;
+  color:var(--mut);
+}
+.pos9 button.on{border-color:var(--green); color:var(--green); background:#f0fdf4; font-weight:600;}
+.palette{display:flex; gap:6px; flex-wrap:wrap;}
+.palette button{
+  width:26px; height:26px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px var(--line);
+}
+/* image watermark preview */
+#wmImgPreviewWrap, #kwWmImgPreviewWrap{position:relative; margin-bottom:10px;}
+#wmImgPreview, #kwWmImgPreview, #maskImgPreview{width:100%; height:110px; border:1px solid var(--line); border-radius:10px; display:block;}
+#wmImgRemove, #kwWmImgRemove{
+  position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%;
+  border:none; background:rgba(0,0,0,.6); color:#fff; font-size:13px; line-height:1;
+}
+/* keyword list */
+.kw-tip{font-size:12px; color:var(--mut); margin-bottom:8px;}
+#kwList{margin-bottom:8px;}
+.kw-row{display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:6px 0; border-bottom:1px dashed var(--line);}
+.kw-row:last-child{border-bottom:none;}
+.kw-row .kw-txt{flex:1; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.kw-row .mini-btn{margin-left:0; padding:3px 8px;}
+.mini-btn.on{background:var(--green); border-color:var(--green); color:#fff;}
+.mini-btn.del{color:#dc2626; border-color:#fca5a5;}
+#kwInput{flex:1; min-width:0;}
+#kwAdd.kw-add{margin-left:8px; flex:none; padding:8px 14px;}
+/* step nav */
+.nav{display:flex; gap:10px; margin-top:6px;}
+.nav .btn{flex:1;}
+#schemeBtns .btn{flex:1 1 30%; padding:10px; font-size:13px;}
+#schemeBtns .btn.on{border-color:var(--green); color:var(--green); background:#f0fdf4; font-weight:600;}
+/* toast */
+#toast{
+  position:fixed; left:50%; bottom:90px; transform:translateX(-50%) translateY(20px);
+  background:rgba(17,24,39,.92); color:#fff; padding:10px 18px; border-radius:10px;
+  font-size:14px; opacity:0; pointer-events:none; transition:.25s; z-index:99; max-width:86vw;
+  text-align:center;
+}
+#toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+.loading-msg{text-align:center; color:var(--mut); font-size:13px; padding:8px 0;}
+/* OCR 文字查看弹层 */
+.mini-btn{margin-left:8px; padding:2px 10px; border:1px solid var(--mut); border-radius:6px; background:none; color:inherit; font-size:12px; cursor:pointer;}
+#ocrOverlay{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#ocrOverlay.hidden{display:none;}
+#ocrMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#ocrPanel{position:relative; width:88vw; max-width:560px; max-height:76vh; display:flex; flex-direction:column;
+  background:var(--bg); border:1px solid var(--bd); border-radius:12px; overflow:hidden;}
+#ocrHead{display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-bottom:1px solid var(--bd);}
+#ocrHead b{font-size:14px; color:var(--tx); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+#ocrClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#ocrBody{flex:1; overflow:auto; padding:12px 14px; margin:0; white-space:pre-wrap; word-break:break-all;
+  font:13px/1.7 ui-monospace, Menlo, Consolas, monospace; color:var(--tx);}
+#ocrBody .ph{color:var(--mut); font-family:inherit;}
+.btnrow{display:flex; gap:8px; margin-bottom:8px;}
+.btnrow .btn{margin-top:0;}
+/* 方案改名弹层 */
+#renameModal{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#renameModal.hidden{display:none;}
+#renameMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#renamePanel{position:relative; width:88vw; max-width:300px; max-height:70vh; overflow-y:auto; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:12px; box-sizing:border-box;}
+#renameHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+#renameHead b{font-size:14px; color:var(--tx);}
+#renameClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#renamePanel .set{margin-bottom:8px;}
+#renamePanel .set label{width:48px; font-size:13px;}
+#renamePanel .set input{font-size:13px; padding:8px 10px;}
+#renamePanel .nav{margin-top:10px;}
+/* 复制方案弹层 */
+#copyModal{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#copyModal.hidden{display:none;}
+#copyMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#copyPanel{position:relative; width:84vw; max-width:300px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:12px; box-sizing:border-box;}
+#copyHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+#copyHead b{font-size:14px; color:var(--tx);}
+#copyClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#copyDesc{margin:0 0 8px; color:var(--mut); font-size:13px;}
+#copyTargets .kw-row input{width:18px; height:18px; accent-color:var(--green); flex:none;}
+#copyTargets .kw-row{margin-bottom:2px;}
+/* 导出设置弹层 */
+#exportModal{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#exportModal.hidden{display:none;}
+#exportMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#exportPanel{position:relative; width:88vw; max-width:420px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:12px; box-sizing:border-box;}
+#exportHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+#exportHead b{font-size:14px; color:var(--tx);}
+#exportClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#exportText{width:100%; height:130px; box-sizing:border-box; border:1px solid var(--line); border-radius:8px;
+  padding:8px; font:12px/1.5 ui-monospace, Menlo, Consolas, monospace; color:var(--tx);
+  resize:none; overflow:auto; background:#fff; word-break:break-all;}
+#kwWmDlg{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#kwWmDlg.hidden{display:none;}
+#kwWmMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#kwWmPanel{position:relative; width:88vw; max-width:420px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:12px; box-sizing:border-box;}
+#kwWmHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+#kwWmHead b{font-size:14px; color:var(--tx);}
+#kwWmClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#previewCanvas{width:100%; border:1px solid var(--line); border-radius:8px; background:#fff; box-sizing:border-box;}
+#saveModal{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#saveModal.hidden{display:none;}
+#saveMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#savePanel{position:relative; width:86vw; max-width:400px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:14px; box-sizing:border-box;}
+#saveHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;}
+#saveHead b{font-size:14px; color:var(--tx);}
+#saveText{margin:8px 0 4px; font-size:13px; color:var(--tx); word-break:break-all;}
+#saveBar{background:var(--green); border-radius:8px; height:100%; width:0%; transition:width .15s;}
+#importModal{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#importModal.hidden{display:none;}
+#importMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#importPanel{position:relative; width:88vw; max-width:420px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:12px; box-sizing:border-box;}
+#importHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+#importHead b{font-size:14px; color:var(--tx);}
+#importClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#importText{width:100%; height:130px; box-sizing:border-box; border:1px solid var(--line); border-radius:8px;
+  padding:8px; font:12px/1.5 ui-monospace, Menlo, Consolas, monospace; color:var(--tx);
+  resize:none; overflow:auto; background:#fff; word-break:break-all;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">价格打码<span>·</span>水印工具</div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <div id="engineStatus">引擎未加载</div>
+    <button id="btnImport" title="导入设置（换浏览器/换手机后恢复）">⬆ 导入</button>
+    <button id="btnExport" title="导出当前全部设置">⬇ 导出</button>
+  </div>
+</header>
+
+<nav class="steps">
+  <div class="step active" data-s="1">1 选图设置</div>
+  <div class="step" data-s="2">2 识别打码</div>
+  <div class="step" data-s="3">3 微调保存</div>
+</nav>
+
+<!-- ============ 步骤1 选图 + 设置 ============ -->
+<section id="sec1">
+  <div class="card">
+    <button class="btn" id="btnPick">📁 从相册选择照片</button>
+    <button class="btn ghost" id="btnCamera">📷 拍照</button>
+    <p class="hint">点击后会打开文件管理器，进入「图片/相册/DCIM」文件夹即可勾选多张图片；也可重复选择追加。选好后点「开始识别并打码」，完成后自动进入微调保存。</p>
+  </div>
+  <div class="card">
+    <button class="btn sec" id="btnPreview">👁 预览效果（识别第一张图）</button>
+    <p class="hint">点一次只识别第一张图作为样板，之后改下面的任何设置都会实时反映在这张图上；参数满意后再点「开始识别并打码」处理所有图片。</p>
+    <div id="previewWrap" class="hidden">
+      <canvas id="previewCanvas"></canvas>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+        <b style="flex:1; font-size:14px;">实时预览（第一张图）</b>
+        <button class="mini-btn" id="btnPreviewClose">收起</button>
+      </div>
+      <p class="kw-tip" style="margin:6px 0 0;">改任何设置都会自动重新标记并刷新预览，无需手动操作。</p>
+    </div>
+  </div>
+  <div id="thumbsHint"></div>
+  <div class="thumbs" id="thumbList"></div>
+
+  <div class="card">
+    <h3>📋 方案（一键切换并保存设置）</h3>
+    <div id="schemeBtns" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;"></div>
+    <div class="btnrow">
+      <button class="btn sec" id="btnAddScheme">＋ 新增方案</button>
+      <button class="btn sec" id="btnDelScheme">🗑 删除当前</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn sec" id="btnSaveScheme" style="white-space:nowrap;">💾 保存到当前方案</button>
+      <button class="btn sec" id="btnRenameScheme" style="white-space:nowrap;">✎ 改名</button>
+    </div>
+    <button class="btn sec" id="btnCopyScheme" style="margin-top:8px;">📋 复制当前方案到其他方案</button>
+  </div>
+
+  <div class="card">
+    <h3>🫧 打码设置</h3>
+    <div class="set">
+      <label>方式</label>
+      <div style="flex:1; display:flex; gap:8px;">
+        <button class="mini-btn" id="maskTypeMosaic">马赛克</button>
+        <button class="mini-btn" id="maskTypeBlur">模糊</button>
+        <button class="mini-btn" id="maskTypeSolid">色块</button>
+        <button class="mini-btn" id="maskTypeImg">图片</button>
+      </div>
+    </div>
+    <div id="maskMosaicSet" class="hidden">
+      <div class="set">
+        <label>块大小</label>
+        <input type="range" id="mosaicSize" min="4" max="64" step="1">
+        <span class="val" id="mosaicSizeVal"></span>
+      </div>
+    </div>
+    <div id="maskBlurSet" class="hidden">
+      <div class="set">
+        <label>模糊强度</label>
+        <input type="range" id="maskBlur" min="1" max="40" step="1">
+        <span class="val" id="maskBlurVal"></span>
+      </div>
+      <p class="kw-tip" style="margin:0;">强度越大越糊，参考你手上的模糊示例图调整。</p>
+    </div>
+    <div id="maskSolidSet" class="hidden">
+      <div class="set">
+        <label>颜色</label>
+        <input type="color" id="maskSolidColor" value="#000000">
+      </div>
+      <div class="set">
+        <label>不透明度</label>
+        <input type="range" id="maskSolidOpacity" min="0.2" max="1" step="0.05">
+        <span class="val" id="maskSolidOpacityVal"></span>
+      </div>
+    </div>
+    <div id="maskImgSet" class="hidden">
+      <p class="kw-tip" style="margin:0 0 6px;">上传一张素材图（如你那张参考图），打码框多大就自动从素材里裁剪多大一块贴上去遮挡。</p>
+      <div class="set">
+        <label style="width:auto; margin-right:8px;">素材</label>
+        <button class="btn sec" id="btnMaskImgUpload" style="padding:8px;">📁 选择素材图片</button>
+        <input type="file" id="maskImgInput" accept="image/*" hidden>
+      </div>
+      <div id="maskImgArea" class="hidden">
+        <div id="kwWmImgPreviewWrap" style="margin-bottom:0;">
+          <canvas id="maskImgPreview"></canvas>
+          <button id="maskImgRemove" title="移除打码素材">✕</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="set" style="margin-bottom:4px;">
+      <label style="width:auto; margin-right:8px;">价格打码（¥/小数点）</label>
+      <label class="switch"><input type="checkbox" id="kwPriceEnabled"><span class="sl"></span></label>
+    </div>
+    <p class="kw-tip">识别出的数字串若含人民币符号 ¥ 或小数点（如 ¥16.78、5.50），会自动打码。</p>
+    <div class="set" style="margin-bottom:4px;">
+      <label style="width:auto; margin-right:8px;">关键词打码</label>
+      <label class="switch"><input type="checkbox" id="kwEnabled"><span class="sl"></span></label>
+    </div>
+    <p class="kw-tip">识别到以下词语时自动打码。「词本身」只打该词，「整行」把所在行全部打码。</p>
+    <div class="set" style="margin-bottom:4px;">
+      <label style="width:auto; margin-right:8px;">关键词水印</label>
+      <label class="switch"><input type="checkbox" id="kwWmEnabled"><span class="sl"></span></label>
+    </div>
+    <p class="kw-tip">识别到以下词语时，在词语附近盖上水印，水印样式直接在下边设置。</p>
+    <div id="kwWmSet" class="hidden">
+      <div class="set" style="margin-bottom:6px;">
+        <label style="width:auto; margin-right:8px;">水印类型</label>
+        <div style="flex:1; display:flex; gap:8px;">
+          <button class="mini-btn" id="kwWmTypeText">文字水印</button>
+          <button class="mini-btn" id="kwWmTypeImage">图片水印</button>
+        </div>
+      </div>
+      <div id="kwWmTextSet" class="hidden">
+        <div class="set">
+          <label>文字</label>
+          <input type="text" id="kwWmText" placeholder="例如：仅供内部使用" maxlength="40">
+        </div>
+        <div class="set">
+          <label>字号</label>
+          <input type="range" id="kwWmSize" min="20" max="150" step="5">
+          <span class="val" id="kwWmSizeVal"></span>
+        </div>
+        <div class="set">
+          <label>颜色</label>
+          <input type="color" id="kwWmColor" value="#ffffff">
+          <span class="palette" id="kwWmPalette"></span>
+        </div>
+        <div class="set">
+          <label>透明度</label>
+          <input type="range" id="kwWmOpacity" min="0.1" max="1" step="0.05">
+          <span class="val" id="kwWmOpacityVal"></span>
+        </div>
+      </div>
+      <div id="kwWmImgSet" class="hidden">
+        <p class="kw-tip" style="margin:0 0 6px;">关键词水印使用自己独立的图片，与下方「图片水印」互不影响。</p>
+        <div class="set">
+          <label style="width:auto; margin-right:8px;">上传</label>
+          <button class="btn sec" id="btnKwWmImgUpload" style="padding:8px;">📁 选择透明 PNG 图片</button>
+          <input type="file" id="kwWmImgInput" accept="image/png" hidden>
+        </div>
+        <div id="kwWmImgArea" class="hidden">
+          <div id="kwWmImgPreviewWrap">
+            <canvas id="kwWmImgPreview"></canvas>
+            <button id="kwWmImgRemove" title="移除关键词水印图片">✕</button>
+          </div>
+        </div>
+        <div class="set">
+          <label>大小</label>
+          <input type="range" id="kwWmImgSize" min="10" max="150" step="5">
+          <span class="val" id="kwWmImgSizeVal"></span>
+        </div>
+        <div class="set">
+          <label>透明度</label>
+          <input type="range" id="kwWmImgOpacity" min="0.1" max="1" step="0.05">
+          <span class="val" id="kwWmImgOpacityVal"></span>
+        </div>
+      </div>
+      <div class="set">
+        <label>水印范围</label>
+        <input type="range" id="kwWmRange" min="0" max="100" step="5">
+        <span class="val" id="kwWmRangeVal"></span>
+      </div>
+      <div class="set">
+        <label>倾斜度</label>
+        <input type="range" id="kwWmAngle" min="-60" max="60" step="1">
+        <span class="val" id="kwWmAngleVal"></span>
+      </div>
+    </div>
+    <div id="kwList"></div>
+    <div class="set">
+      <label style="width:auto; margin-right:8px;">添加</label>
+      <input type="text" id="kwInput" placeholder="输入关键词，如：实付款" maxlength="20">
+      <button id="kwAdd" class="mini-btn kw-add">添加</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="set" style="margin-bottom:0; cursor:pointer;" id="wmCardHead">
+      <label style="width:auto; margin-right:8px; flex:1;">🫧 文字水印 <span id="wmCardArrow" style="color:var(--mut); font-size:12px;">▸</span></label>
+      <label class="switch"><input type="checkbox" id="wmEnabled"><span class="sl"></span></label>
+    </div>
+    <div id="wmCardBody" class="hidden">
+      <div class="set" style="margin-top:10px;">
+        <label>类型</label>
+      <select id="wmType">
+        <option value="single">单个水印</option>
+        <option value="tile">平铺满屏</option>
+      </select>
+    </div>
+    <div class="set">
+      <label>文字</label>
+      <input type="text" id="wmText" placeholder="例如：仅供内部使用" maxlength="40">
+    </div>
+    <div class="set">
+      <label>字号</label>
+      <input type="range" id="wmSize" min="0.5" max="8" step="0.5">
+      <span class="val" id="wmSizeVal"></span>
+    </div>
+    <div class="set">
+      <label>颜色</label>
+      <input type="color" id="wmColor" value="#ffffff">
+      <span class="palette" id="wmPalette"></span>
+    </div>
+    <div class="set">
+      <label>透明度</label>
+      <input type="range" id="wmOpacity" min="0.1" max="1" step="0.05">
+      <span class="val" id="wmOpacityVal"></span>
+    </div>
+    <div id="wmSingleSet" class="hidden">
+      <div class="set">
+        <label>位置</label>
+        <div class="pos9" id="wmPos"></div>
+      </div>
+    </div>
+    <div id="wmTileSet" class="hidden">
+      <div class="set">
+        <label>间距</label>
+        <input type="range" id="wmSpacing" min="5" max="40" step="1">
+        <span class="val" id="wmSpacingVal"></span>
+      </div>
+      <div class="set">
+        <label>倾斜</label>
+        <input type="range" id="wmAngle" min="-60" max="60" step="1">
+        <span class="val" id="wmAngleVal"></span>
+      </div>
+    </div>
+    <div class="set" style="margin-bottom:0; margin-top:6px;" id="wmOcrHead">
+      <label style="width:auto; margin-right:8px; flex:1; cursor:pointer;">📌 识别文字位置打水印 <span id="wmOcrArrow" style="color:var(--mut); font-size:12px;">▸</span></label>
+      <label class="switch"><input type="checkbox" id="wmOcrEnabled"><span class="sl"></span></label>
+    </div>
+    <div id="wmOcrSet" class="hidden">
+      <p class="kw-tip" style="margin:6px 0 8px;">识别出文字后，在文字所在位置盖上水印（文字或图片，自动适配大小）。</p>
+      <div class="set" style="margin-bottom:6px;">
+        <label>水印类型</label>
+        <select id="wmOcrType">
+          <option value="text">文字水印</option>
+          <option value="image">图片水印</option>
+        </select>
+      </div>
+      <div class="set" style="margin-bottom:6px;">
+        <label style="width:auto; margin-right:8px;">盖在</label>
+        <div style="flex:1; display:flex; gap:12px; flex-wrap:wrap;">
+          <label style="width:auto; font-size:13px; color:var(--txt);"><input type="checkbox" id="wmOcrAll" style="width:16px;height:16px;accent-color:var(--green); vertical-align:-2px;"> 全部识别文字</label>
+          <label style="width:auto; font-size:13px; color:var(--txt);"><input type="checkbox" id="wmOcrOrder" style="width:16px;height:16px;accent-color:var(--green); vertical-align:-2px;"> 连续数字串(订单号)</label>
+        </div>
+      </div>
+      <div class="set" id="wmOcrMinRow" style="margin-bottom:0;">
+        <label>订单号最少位数</label>
+        <input type="range" id="wmOcrMinLen" min="10" max="20" step="1">
+        <span class="val" id="wmOcrMinLenVal"></span>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="set" style="margin-bottom:0; cursor:pointer;" id="wmImgCardHead">
+      <label style="width:auto; margin-right:8px; flex:1;">🖼 图片水印 <span id="wmImgCardArrow" style="color:var(--mut); font-size:12px;">▸</span></label>
+      <label class="switch"><input type="checkbox" id="wmImgEnabled"><span class="sl"></span></label>
+    </div>
+    <div id="wmImgCardBody" class="hidden">
+      <div class="set" style="margin-top:10px;">
+        <label>上传</label>
+        <button class="btn sec" id="btnWmImgUpload" style="padding:8px;">📁 选择透明 PNG 图片</button>
+        <input type="file" id="wmImgInput" accept="image/png" hidden>
+      </div>
+    <div id="wmImgArea" class="hidden">
+      <div id="wmImgPreviewWrap">
+        <canvas id="wmImgPreview"></canvas>
+        <button id="wmImgRemove" title="移除图片水印">✕</button>
+      </div>
+      <div class="set">
+        <label>类型</label>
+        <select id="wmImgType">
+          <option value="single">单个水印</option>
+          <option value="tile">平铺满屏</option>
+        </select>
+      </div>
+      <div class="set">
+        <label>透明度</label>
+        <input type="range" id="wmImgOpacity" min="0.1" max="1" step="0.05">
+        <span class="val" id="wmImgOpacityVal"></span>
+      </div>
+      <div class="set">
+        <label>大小</label>
+        <input type="range" id="wmImgSize" min="5" max="60" step="1">
+        <span class="val" id="wmImgSizeVal"></span>
+      </div>
+      <div id="wmImgSingleSet" class="hidden">
+        <div class="set">
+          <label>位置</label>
+          <div class="pos9" id="wmImgPos"></div>
+        </div>
+      </div>
+      <div id="wmImgTileSet" class="hidden">
+        <div class="set">
+          <label>间距</label>
+          <input type="range" id="wmImgSpacing" min="5" max="40" step="1">
+          <span class="val" id="wmImgSpacingVal"></span>
+        </div>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  <div class="nav">
+    <button class="btn" id="btnRun">🚀 开始识别并打码</button>
+  </div>
+</section>
+
+<!-- ============ 步骤2 识别并打码（处理中，完成后自动进入步骤3） ============ -->
+<section id="sec2" class="hidden">
+  <div id="progressWrap" class="hidden">
+    <div class="bar"><div id="progressBar"></div></div>
+    <div id="progressText"></div>
+  </div>
+  <div id="recognizeResult"></div>
+  <div class="nav">
+    <button class="btn sec" id="back1">上一步</button>
+  </div>
+</section>
+
+<!-- ============ 步骤3 微调 ============ -->
+<section id="sec3" class="hidden">
+  <div class="photo-tabs thumbs" id="photoTabs" style="grid-template-columns:repeat(4,1fr);"></div>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="editor"></canvas>
+    <div id="zoomBtns">
+      <button data-zoom="in">+</button>
+      <button data-zoom="out">−</button>
+      <button data-zoom="fit">适应</button>
+    </div>
+    <button id="delFloat" class="hidden">🗑 删除选中框</button>
+  </div>
+  <div class="toolbar">
+    <button class="btn sec" id="btnAddBox" style="border-color:var(--blue);color:var(--blue);">＋ 手动加框</button>
+    <button class="btn sec" id="btnOcrOverlay">🔤 识别文字</button>
+    <button class="btn sec" id="btnRerun">↻ 重新标记</button>
+  </div>
+  <div class="boxlist" id="boxList"></div>
+  <div class="set" style="margin-bottom:4px;">
+    <label>每批保存张数</label>
+    <select id="saveBatch">
+      <option value="3">3 张</option>
+      <option value="4">4 张</option>
+      <option value="5">5 张</option>
+    </select>
+  </div>
+  <p class="kw-tip" style="margin:-2px 0 10px;">3 张及以下直接逐张保存进相册；超过 3 张自动打包成 .zip 一次下载（浏览器限制连续逐张下载，打包可一次全拿到）。</p>
+  <div class="nav">
+    <button class="btn sec" id="back2">上一步</button>
+    <button class="btn sec" id="btnSaveAll">💾 保存全部</button>
+    <button class="btn" id="btnSaveEdit">💾 保存微调</button>
+  </div>
+</section>
+
+<footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
+  图片仅在手机本地处理，不会上传 · 完全离线可用<br>
+  <span style="opacity:.85;">版本 <span id="verText">v1.3</span></span>
+</footer>
+
+<input type="file" id="fileInput" multiple hidden>
+<input type="file" id="cameraInput" accept="image/*" capture="environment" hidden>
+<div id="procOverlay" class="hidden">
+  <div id="procMask"></div>
+  <div id="procBox">
+    <div id="procSpin"></div>
+    <div id="procText">处理中…</div>
+    <div class="bar"><div id="procBar"></div></div>
+  </div>
+</div>
+<div id="toast"></div>
+<div id="ocrOverlay" class="hidden">
+  <div id="ocrMask" onclick="closeOcrText()"></div>
+  <div id="ocrPanel">
+    <div id="ocrHead"><b id="ocrTitle">OCR 识别文字</b><button id="ocrClose" aria-label="关闭">✕</button></div>
+    <pre id="ocrBody"></pre>
+  </div>
+</div>
+<div id="renameModal" class="hidden">
+  <div id="renameMask" onclick="closeRename()"></div>
+  <div id="renamePanel">
+    <div id="renameHead"><b>✎ 修改方案名称</b><button id="renameClose" onclick="closeRename()" aria-label="关闭">✕</button></div>
+    <div id="renameRows"></div>
+    <div class="nav">
+      <button class="btn sec" id="btnRenameCancel">取消</button>
+      <button class="btn" id="btnRenameOk">保存</button>
+    </div>
+  </div>
+</div>
+<div id="copyModal" class="hidden">
+  <div id="copyMask" onclick="closeCopy()"></div>
+  <div id="copyPanel">
+    <div id="copyHead"><b>📋 复制方案设置</b><button id="copyClose" onclick="closeCopy()" aria-label="关闭">✕</button></div>
+    <p id="copyDesc"></p>
+    <div id="copyTargets"></div>
+    <div class="nav">
+      <button class="btn sec" id="btnCopyCancel">取消</button>
+      <button class="btn" id="btnCopyOk">复制</button>
+    </div>
+  </div>
+</div>
+<div id="exportModal" class="hidden">
+  <div id="exportMask" onclick="closeExport()"></div>
+  <div id="exportPanel">
+    <div id="exportHead"><b>⬇ 导出当前全部设置</b><button id="exportClose" onclick="closeExport()" aria-label="关闭">✕</button></div>
+    <p class="kw-tip" style="margin:0 0 8px;">点「复制」后粘贴发给我，我会把它设成以后每次更新的默认值。</p>
+    <div class="set">
+      <label style="width:auto; margin-right:8px;">导出内容</label>
+      <select id="exportMode" style="flex:1;">
+        <option value="lite" selected>仅设置（推荐，不含图片，文本小好复制）</option>
+        <option value="full">完整备份（含三张图片，文本极长）</option>
+      </select>
+    </div>
+    <textarea id="exportText" readonly spellcheck="false"></textarea>
+    <div class="nav">
+      <button class="btn sec" id="btnExportClose">关闭</button>
+      <button class="btn" id="btnExportFile">💾 下载文件</button>
+      <button class="btn" id="btnExportCopy">📋 复制</button>
+    </div>
+  </div>
+</div>
+<div id="importModal" class="hidden">
+  <div id="importMask" onclick="closeImport()"></div>
+  <div id="importPanel">
+    <div id="importHead"><b>⬆ 导入设置</b><button id="importClose" onclick="closeImport()" aria-label="关闭">✕</button></div>
+    <p class="kw-tip" style="margin:0 0 8px;">换浏览器/换手机后：先在原设备点「⬇ 导出」→「💾 下载文件」，再在这里点「📁 选择文件」导入下载的 .json 文件即可恢复全部设置（含方案、关键词、图片素材）。</p>
+    <div class="nav" style="margin:0 0 8px;">
+      <button class="btn sec" id="btnImportFile">📁 选择文件</button>
+      <input type="file" id="importFileInput" accept=".json,application/json" style="display:none;">
+    </div>
+    <textarea id="importText" spellcheck="false" placeholder="也可以把导出的内容直接粘贴到这里…"></textarea>
+    <div class="nav">
+      <button class="btn sec" id="btnImportCancel">取消</button>
+      <button class="btn" id="btnImportOk">导入</button>
+    </div>
+  </div>
+</div>
+<div id="kwWmDlg" class="hidden">
+  <div id="kwWmMask" onclick="closeKwWmDlg()"></div>
+  <div id="kwWmPanel">
+    <div id="kwWmHead"><b>⚙ 关键词水印独立设置</b><button id="kwWmClose" onclick="closeKwWmDlg()" aria-label="关闭">✕</button></div>
+    <p class="kw-tip" id="kwWmDlgKw" style="margin:0 0 8px;"></p>
+    <div class="set">
+      <label>大小</label>
+      <input type="range" id="kwWmDlgSize" min="20" max="150" step="5">
+      <span class="val" id="kwWmDlgSizeVal"></span>
+    </div>
+    <div class="set" style="align-items:flex-start;">
+      <label>位置</label>
+      <div id="kwWmDlgPos" style="flex:1; display:flex; flex-wrap:wrap; gap:6px;">
+        <button class="mini-btn" data-p="center">中间</button>
+        <button class="mini-btn" data-p="top">上方</button>
+        <button class="mini-btn" data-p="bottom">下方</button>
+        <button class="mini-btn" data-p="left">左方</button>
+        <button class="mini-btn" data-p="right">右方</button>
+      </div>
+    </div>
+    <div class="set">
+      <label>偏移量</label>
+      <input type="range" id="kwWmDlgDist" min="0" max="200" step="5">
+      <span class="val" id="kwWmDlgDistVal"></span>
+    </div>
+    <p class="kw-tip" style="margin:0 0 8px;">偏移量 0% = 盖在关键词正中间，数字越大离得越远（按框的高度/宽度计算）。</p>
+    <div class="nav">
+      <button class="btn sec" id="kwWmDlgReset">↺ 恢复默认</button>
+      <button class="btn" id="kwWmDlgOk">完成</button>
+    </div>
+  </div>
+</div>
+<div id="saveModal" class="hidden">
+  <div id="saveMask"></div>
+  <div id="savePanel">
+    <div id="saveHead"><b>💾 保存进度</b></div>
+    <div class="bar" style="margin:10px 0 0;"><div id="saveBar"></div></div>
+    <div id="saveText"></div>
+    <div class="nav">
+      <button class="btn" id="saveNextBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* 工具版本号：每次更新递增（页脚与导出文件名共用） */
+const TOOL_VER = "v1.3";
+/* ================= 内嵌引擎资源（由构建脚本注入；PaddleOCR + onnxruntime-web，完全离线） ================= */
+const ORT_JS = "/*__ORT_JS_JSON__*/";
+const ORT_WASM_GZ = "/*__ORT_WASM_GZ_B64__*/";
+const DET_ONNX_GZ = "/*__DET_ONNX_GZ_B64__*/";
+const REC_ONNX_GZ = "/*__REC_ONNX_GZ_B64__*/";
+const DICT = /*__DICT_JSON__*/;
+
+/* ================= 状态 ================= */
+const S = {
+  photos: [],          // {id,img,name,w,h,boxes:[],recognized:false}
+  cur: -1,             // 当前照片索引
+  step: 1,
+  engine: null,        // PaddleOCR 引擎（det/rec session）
+  engineBusy: false,
+  detSession: null, detIn: null, detOut: null,
+  recSession: null, recIn: null, recOut: null,
+  boxes: [],           // 引用当前照片 boxes
+  zoom: { scale: 1, ox: 0, oy: 0 },
+  addMode: false,
+  ocrMode: false,      // 识别文字叠加模式
+  sel: -1,             // 选中框索引
+  kwWmSel: -1,         // 选中的关键词水印框索引
+  settings: null,
+  wmImgEl: null,       // 图片水印的 Image 对象（dataURL 加载后）
+  kwWmImgEl: null,     // 关键词水印独立图片的 Image 对象
+  maskImgEl: null,     // 打码素材图片的 Image 对象
+  wmOcrOpen: false,    // 「识别文字位置打水印」折叠面板是否展开
+  wmCardOpen: false,   // 「文字水印」卡片是否展开（默认收起）
+  wmImgCardOpen: false,// 「图片水印」卡片是否展开（默认收起）
+  previewOn: false,    // 步骤1 实时预览模式是否激活
+};
+
+const DEFAULTS = {
+  mosaicSize: 20,
+  saveBatch: 3,           // 保存全部时每批自动下载张数（浏览器限制连续下载，批间需点「继续」）
+  maskType: "blur",       // 打码方式：blur=高斯模糊（参考示例图默认）, mosaic=马赛克, solid=纯色块, img=图片素材
+  maskBlur: 12,           // 模糊强度（像素）
+  maskSolidColor: "#000000",
+  maskSolidOpacity: 1,
+  maskImgData: "",        // 打码素材图（dataURL）：打码框多大就从素材里裁剪多大一块贴上去
+  wm: {
+    enabled: false, type: "single", text: "仅供内部使用",
+    size: 2.5, color: "#ffffff", opacity: 0.5,
+    position: "se", spacing: 15, angle: -30,
+  },
+  wmImg: {
+    enabled: false, data: "", type: "single",
+    opacity: 0.8, size: 15, position: "se", spacing: 20,
+  },
+  wmOcr: {
+    enabled: false, allText: false, orderNo: true, minLen: 12,
+    type: "text",   // text=文字水印, image=图片水印（关键词水印也使用此类型）
+  },
+  kw: {
+    enabled: true,
+    priceEnabled: true,
+    wmEnabled: false,   // 关键词水印总开关
+    wmRange: 15,        // 关键词水印范围：围绕关键词框向外扩大的百分比
+    wmType: "text",     // 关键词水印类型：text=文字, image=图片
+    wmText: "仅供内部使用",
+    wmSize: 60,         // 文字字号：关键词框高的百分比
+    wmColor: "#ffffff",
+    wmOpacity: 0.8,
+    wmImgSize: 80,      // 图片大小：关键词框的百分比
+    wmImgOpacity: 0.8,
+    wmImgData: "",      // 关键词水印独立图片（dataURL），与「图片水印」卡片互不影响
+    wmAngle: 0,         // 倾斜度：-60 ~ 60 度（文字/图片水印通用）
+    list: [
+      { text: "实付款", mode: "word", mask: true, wm: false },
+      { text: "共减", mode: "word", mask: true, wm: false },
+      { text: "自动扣款", mode: "line", mask: true, wm: false },
+    ],
+  },
+};
+
+/* ================= 工具函数 ================= */
+const $ = (id) => document.getElementById(id);
+function toast(msg, ms = 2000) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove("show"), ms);
+}
+/* 处理中全屏遮罩：让耗时操作（引擎加载 / 识别）有明确、即时的进度反馈 */
+function showProc(text, pct) {
+  $("procOverlay").classList.remove("hidden");
+  updateProc(text, pct);
+}
+function updateProc(text, pct) {
+  $("procText").textContent = text;
+  if (pct !== undefined) $("procBar").style.width = Math.max(0, Math.min(100, pct)) + "%";
+}
+function hideProc() { $("procOverlay").classList.add("hidden"); }
+/* 让出主线程，给浏览器一帧时间绘制界面（每个耗时步骤前调用） */
+const yieldUi = () => new Promise(r => setTimeout(r, 30));
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
+}
+function saveSettings() {
+  try { localStorage.setItem("price-tool-settings", JSON.stringify(S.settings)); } catch(e){}
+  /* 预览模式激活时：任何设置改动都自动重建标记（秒级）并实时重绘预览图 */
+  if (S.previewOn) {
+    const p = S.photos[0];
+    if (p && p.ocrWords) buildBoxes(p);
+    renderPreview();
+  }
+}
+/* 把一份设置快照（可含部分字段）与默认值合并成完整设置 */
+function mergeSettings(src) {
+  const s = JSON.parse(JSON.stringify(DEFAULTS));
+  if (!src) return s;
+  if (src.wm) Object.assign(s.wm, src.wm);
+  if (src.wmImg) Object.assign(s.wmImg, src.wmImg);
+  if (src.wmOcr) { Object.assign(s.wmOcr, src.wmOcr); if (s.wmOcr.type !== "image") s.wmOcr.type = "text"; }
+  if (src.mosaicSize) s.mosaicSize = src.mosaicSize;
+  if (typeof src.saveBatch === "number" && src.saveBatch >= 1 && src.saveBatch <= 6) s.saveBatch = Math.round(src.saveBatch);
+  if (["blur", "mosaic", "solid", "img"].indexOf(src.maskType) >= 0) s.maskType = src.maskType;
+  if (typeof src.maskBlur === "number") s.maskBlur = src.maskBlur;
+  if (typeof src.maskSolidColor === "string") s.maskSolidColor = src.maskSolidColor;
+  if (typeof src.maskSolidOpacity === "number") s.maskSolidOpacity = src.maskSolidOpacity;
+  if (typeof src.maskImgData === "string") s.maskImgData = src.maskImgData;
+  if (src.kw) {
+    s.kw.enabled = src.kw.enabled !== false;
+    s.kw.priceEnabled = src.kw.priceEnabled !== false;
+    s.kw.wmEnabled = !!src.kw.wmEnabled;
+    if (typeof src.kw.wmRange === "number") s.kw.wmRange = src.kw.wmRange;
+    s.kw.wmType = src.kw.wmType === "image" ? "image" : "text";
+    if (typeof src.kw.wmText === "string") s.kw.wmText = src.kw.wmText;
+    if (typeof src.kw.wmSize === "number") s.kw.wmSize = src.kw.wmSize;
+    if (typeof src.kw.wmColor === "string") s.kw.wmColor = src.kw.wmColor;
+    if (typeof src.kw.wmOpacity === "number") s.kw.wmOpacity = src.kw.wmOpacity;
+    if (typeof src.kw.wmImgSize === "number") s.kw.wmImgSize = src.kw.wmImgSize;
+    if (typeof src.kw.wmImgOpacity === "number") s.kw.wmImgOpacity = src.kw.wmImgOpacity;
+    if (typeof src.kw.wmImgData === "string") s.kw.wmImgData = src.kw.wmImgData;
+    if (typeof src.kw.wmAngle === "number") s.kw.wmAngle = src.kw.wmAngle;
+    s.kw.list = (src.kw.list || []).filter(k => k && k.text && String(k.text).trim())
+      .map(k => {
+        const o = { text: String(k.text).trim(), mode: k.mode === "line" ? "line" : "word",
+                    mask: k.mask !== false, wm: !!k.wm };
+        if (typeof k.wmSize === "number") o.wmSize = k.wmSize;
+        if (["center", "top", "bottom", "left", "right"].indexOf(k.wmPosDir) >= 0) o.wmPosDir = k.wmPosDir;
+        if (typeof k.wmPosDist === "number") o.wmPosDist = k.wmPosDist;
+        return o;
+      });
+  }
+  return s;
+}
+function loadSettings() {
+  let s = mergeSettings(null);
+  try {
+    const saved = JSON.parse(localStorage.getItem("price-tool-settings"));
+    if (saved) s = mergeSettings(saved);
+  } catch(e){}
+  return s;
+}
+/* base64 转字节：分块解码，每段让出主线程，避免大字符串解码卡死界面 */
+async function b64ToBytes(b64) {
+  const u8 = new Uint8Array(Math.floor(b64.length * 3 / 4));
+  const CHUNK = 1 << 22;   // 每段 4M base64 字符
+  let off = 0;
+  for (let p = 0; p < b64.length; p += CHUNK) {
+    const bin = atob(b64.slice(p, p + CHUNK));
+    for (let i = 0; i < bin.length; i++) u8[off++] = bin.charCodeAt(i);
+    if (p + CHUNK < b64.length) await new Promise(r => setTimeout(r, 0));
+  }
+  return u8;
+}
+/* ================= 引擎初始化（完全离线，PaddleOCR） ================= */
+function inflateGz(u8) {
+  const ds = new DecompressionStream("gzip");
+  const stream = new Blob([u8]).stream().pipeThrough(ds);
+  return new Response(stream).arrayBuffer();
+}
+/* ===== 模型本地缓存：解压一次存入 IndexedDB，之后直接读，跳过耗时的 base64 解码 ===== */
+const MODEL_DB_NAME = "price-tool-model-cache";
+const MODEL_DB_VER = 2;   // v2 起新增 ocr 存储区（识别结果缓存）
+const MODEL_CACHE_VER = "v1";   // 内置模型更新时改为 v2，触发重新缓存
+function openModelDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(MODEL_DB_NAME, MODEL_DB_VER);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains("models")) req.result.createObjectStore("models");
+      if (!req.result.objectStoreNames.contains("ocr")) req.result.createObjectStore("ocr");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function idbGetModel(key, store) {
+  store = store || "models";
+  return openModelDB().then(db => new Promise((resolve, reject) => {
+    const r = db.transaction(store, "readonly").objectStore(store).get(key);
+    r.onsuccess = () => { db.close(); resolve(r.result); };
+    r.onerror = () => { db.close(); reject(r.error); };
+  }));
+}
+function idbPutModel(key, data, store) {
+  store = store || "models";
+  return openModelDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.objectStore(store).put(data, key);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error); };
+  }));
+}
+/* ===== 识别结果缓存：同一张图（内容指纹相同）再次处理时直接复用文字结果，跳过模型 ===== */
+function ocrCacheKey(p) {
+  return "ocr:" + p.hash + ":" + p.w + "x" + p.h;
+}
+async function ocrCacheGet(p) {
+  if (!p.hash) return null;
+  try {
+    const hit = await idbGetModel(ocrCacheKey(p), "ocr");
+    return (hit && Array.isArray(hit.lines)) ? hit.lines : null;
+  } catch (e) { return null; }
+}
+function ocrCachePut(p, lines) {
+  if (!p.hash || !lines) return;
+  idbPutModel(ocrCacheKey(p), { w: p.w, h: p.h, lines }, "ocr").catch(() => {});
+}
+/* 尝试用缓存结果补齐照片识别：命中则填入 ocrWords 并重建框，返回 true */
+async function applyCachedOcr(p) {
+  if (p.ocrWords) return true;
+  const lines = await ocrCacheGet(p);
+  if (lines === null) return false;
+  p.ocrWords = lines;
+  p.ocrPasses = [{ pass: 1, scale: 1, enhance: false, lines: lines.map(l => l.text), words: lines }];
+  p.recognized = true;
+  buildBoxes(p);
+  return true;
+}
+/* 取模型二进制：优先读本地缓存，缓存缺失时解码并写入缓存 */
+async function loadModelBytes(name, gzB64) {
+  const key = MODEL_CACHE_VER + ":" + name;
+  S.modelLoadInfo = S.modelLoadInfo || {};
+  try {
+    const hit = await idbGetModel(key);
+    if (hit) { S.modelLoadInfo[name] = "cache"; return hit; }
+  } catch (e) {}
+  const ab = await inflateGz(await b64ToBytes(gzB64));
+  S.modelLoadInfo[name] = "decode";
+  try { await idbPutModel(key, ab); } catch (e) {}
+  return ab;
+}
+function setEngineStatus(state, text) {
+  const el = $("engineStatus");
+  el.textContent = text;
+  el.className = state;
+  /* 引擎加载各阶段实时同步到处理遮罩，让用户看到进度在推进 */
+  if (state === "busy" && !$("procOverlay").classList.contains("hidden")) updateProc(text);
+}
+/* 引擎失败时给出更详细的提示：帮助用户判断是内核兼容、内存还是缓存问题 */
+function engineFailText(err) {
+  const m = ((err && err.message) || err || "").toString();
+  let hint;
+  if (/onnxruntime 加载失败/.test(m)) {
+    hint = "onnxruntime 脚本没能运行，浏览器可能禁用了内嵌脚本或内核不兼容。";
+  } else if (/simd|thread|compile|wasm/i.test(m)) {
+    hint = "浏览器内核对 WebAssembly 支持不完整，常见于夸克等第三方浏览器内核。";
+  } else if (/memory|allocate|realloc/i.test(m)) {
+    hint = "内存不足，请关闭其他标签页后重试。";
+  } else if (/indexeddb|idb/i.test(m)) {
+    hint = "本地缓存不可用（可能开了隐私模式/无痕）。";
+  } else {
+    hint = "暂时无法确认具体原因。";
+  }
+  return "识别引擎加载失败：" + hint + " 建议改用 Chrome 或手机自带浏览器（如 vivo 自带浏览器）打开本工具。" + (m ? "（原始错误：" + m + "）" : "");
+}
+async function initEngine() {
+  if (S.engine) return S.engine;
+  if (S.engineLoading) return S.engineLoading;
+  S.engineLoading = (async () => {
+    setEngineStatus("busy", "正在初始化识别引擎…");
+    try {
+      // 1) 取 wasm -> blob URL（onnxruntime-web 在 worker 中按文件名 fetch，全部映射到同一 URL）
+      const wasmAb = await loadModelBytes("wasm", ORT_WASM_GZ);
+      const wasmUrl = URL.createObjectURL(new Blob([wasmAb], { type: "application/wasm" }));
+      // 2) 注入 onnxruntime.js
+      const s = document.createElement("script");
+      s.textContent = ORT_JS;
+      document.body.appendChild(s);
+      if (typeof ort === "undefined") throw new Error("onnxruntime 加载失败");
+      ort.env.wasm.numThreads = 1;   // 强制单线程，避免手机浏览器多线程 wasm 崩溃
+      ort.env.wasm.wasmPaths = {
+        "ort-wasm.wasm": wasmUrl,
+        "ort-wasm-simd.wasm": wasmUrl,
+        "ort-wasm-simd-threaded.wasm": wasmUrl,
+        "ort-wasm-simd-threaded.jsep.wasm": wasmUrl,
+      };
+      // 3) 检测/识别两个模型并行加载（各自的取数据/解析交错执行，整体省时）
+      setEngineStatus("busy", "正在并行加载检测/识别模型…");
+      await yieldUi();   // 先绘制状态文字，再做耗时的模型解析
+      const loadDet = (async () => {
+        const s = await ort.InferenceSession.create(await loadModelBytes("det", DET_ONNX_GZ), { executionProviders: ["wasm"] });
+        return { s, in: s.inputNames[0], out: s.outputNames[0] };
+      })();
+      const loadRec = (async () => {
+        const s = await ort.InferenceSession.create(await loadModelBytes("rec", REC_ONNX_GZ), { executionProviders: ["wasm"] });
+        return { s, in: s.inputNames[0], out: s.outputNames[0] };
+      })();
+      const detR = await loadDet, recR = await loadRec;
+      S.detSession = detR.s; S.detIn = detR.in; S.detOut = detR.out;
+      S.recSession = recR.s; S.recIn = recR.in; S.recOut = recR.out;
+      S.engine = true;
+      /* 显示模型数据来源：cache=从本地缓存秒读；decode=缓存不可用/首次，重新解压了 20MB */
+      const info = S.modelLoadInfo || {};
+      const miss = Object.keys(info).length === 3 && ["wasm", "det", "rec"].every(n => info[n] === "decode");
+      setEngineStatus("ready", miss ? "引擎已就绪（本地缓存不可用，每次需重新解码模型）" : "引擎已就绪（模型数据已缓存）");
+      return S.engine;
+    } catch (err) {
+      console.error(err);
+      setEngineStatus("err", engineFailText(err));
+      throw err;
+    } finally {
+      S.engineLoading = null;
+    }
+  })();
+  return S.engineLoading;
+}
+
+/* ================= 照片管理 ================= */
+function addPhotos(fileList) {
+  let ignored = 0;
+  for (const file of fileList) {
+    if (!file.type.startsWith("image/")) { ignored++; continue; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      /* 计算图片内容指纹（采样 32x32 像素哈希），用于识别结果缓存 */
+      let hash = "";
+      try {
+        const hc = document.createElement("canvas");
+        hc.width = 32; hc.height = 32;
+        const hg = hc.getContext("2d");
+        hg.drawImage(img, 0, 0, 32, 32);
+        const hd = hg.getImageData(0, 0, 32, 32).data;
+        let h = 5381;
+        for (let i = 0; i < hd.length; i += 8) h = ((h << 5) + h + hd[i] * 31 + hd[i + 1]) >>> 0;
+        hash = h.toString(36);
+      } catch (e) {}
+      S.photos.push({ id: Date.now() + Math.random(), img, hash, name: file.name || "photo.jpg", w: img.naturalWidth, h: img.naturalHeight, boxes: [], recognized: false });
+      renderThumbs();
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  }
+  if (ignored) toast("已忽略 " + ignored + " 个非图片文件");
+}
+function renderThumbs() {
+  const wrap = $("thumbList");
+  wrap.innerHTML = "";
+  S.photos.forEach((p, i) => {
+    const d = document.createElement("div");
+    d.className = "th" + (i === S.cur ? " cur" : "");
+    d.innerHTML = `<img src="${p.img.src}"><div class="tag">${p.name}</div><button class="rm">×</button>`;
+    d.querySelector(".rm").onclick = (e) => { e.stopPropagation(); removePhoto(i); };
+    d.onclick = () => { S.cur = i; renderThumbs(); };
+    wrap.appendChild(d);
+  });
+  /* 已选数量提示：引导逐张追加 */
+  const hint = $("thumbsHint");
+  if (hint) {
+    hint.textContent = S.photos.length ? `已选 ${S.photos.length} 张照片 · 可继续点「📁 从相册选择」追加` : "";
+  }
+}
+function removePhoto(i) {
+  S.photos.splice(i, 1);
+  if (S.cur >= S.photos.length) S.cur = S.photos.length - 1;
+  if (S.cur === i) S.cur = Math.min(i, S.photos.length - 1);
+  renderThumbs();
+  if (S.previewOn) renderPreview();   // 第一张被删时 renderPreview 内部会自动收起
+}
+
+/* ================= 画布渲染 ================= */
+const canvas = $("editor");
+const ctx = canvas.getContext("2d");
+
+function fitTransform() {
+  const wrap = $("canvasWrap");
+  const cw = wrap.clientWidth;
+  const p = curPhoto();
+  if (!p) return;
+  const scale = cw / p.w;
+  S.fitScale = scale;
+  S.zoom = { scale, ox: 0, oy: 0 };
+}
+function curPhoto() { return S.photos[S.cur] || null; }
+function resetCanvas() {
+  const p = curPhoto();
+  const wrap = $("canvasWrap");
+  if (!p) return;
+  fitTransform();
+  canvas.width = wrap.clientWidth;
+  canvas.height = Math.max(200, Math.round(p.h * S.zoom.scale));
+  canvas.style.height = canvas.height + "px";
+  S.boxes = p.boxes;
+  S.kwWmSel = -1;   // 切换照片时清空水印框选中
+  draw();
+}
+function draw() {
+  const p = curPhoto();
+  if (!p) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const { scale, ox, oy } = S.zoom;
+  // 背景
+  ctx.fillStyle = "#0f1115";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // 绘制原图（屏幕空间全图缩放，GPU 加速）
+  ctx.drawImage(p.img, 0, 0, p.w, p.h, ox, oy, p.w * scale, p.h * scale);
+  // 识别文字叠加模式：只显示原图 + 识别词，不画马赛克/水印/框
+  if (S.ocrMode) {
+    drawOcrOverlay(p, scale, ox, oy);
+    return;
+  }
+  // 打码预览（屏幕空间）
+  for (let i = 0; i < p.boxes.length; i++) {
+    if (p.boxes[i].skip) continue;
+    const b = boxToScreen(p.boxes[i]);
+    applyMaskScreen(b);
+  }
+  // 水印预览
+  drawWatermarkScreen();
+  // 关键词水印预览（含选中框描边）
+  drawKwWmPreview();
+  // 绘制框
+  for (let i = 0; i < p.boxes.length; i++) {
+    if (p.boxes[i].skip) continue;
+    const b = boxToScreen(p.boxes[i]);
+    ctx.strokeStyle = i === S.sel ? "#22c55e" : "#ef4444";
+    ctx.lineWidth = i === S.sel ? 2.5 : 1.5;
+    ctx.strokeRect(b.x + 0.5, b.y + 0.5, Math.max(1, b.w - 1), Math.max(1, b.h - 1));
+    if (i === S.sel) {
+      ctx.strokeStyle = "#22c55e";
+      const hs = 8;
+      const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]];
+      for (const [hx, hy] of pts) {
+        ctx.fillStyle = "#22c55e";
+        ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+      }
+      ctx.fillStyle = "rgba(34,197,94,.08)";
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+    }
+  }
+  // 加框模式提示
+  if (S.addMode) {
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.font = "12px sans-serif";
+    ctx.fillText("在图上拖动框住价格区域", 10, 18);
+  }
+}
+function boxToScreen(b) {
+  const { scale, ox, oy } = S.zoom;
+  return { x: b.x * scale + ox, y: b.y * scale + oy, w: b.w * scale, h: b.h * scale };
+}
+function mosaicScreen(b, bs) {
+  bs = Math.max(3, bs);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(b.x, b.y, b.w, b.h);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = false;
+  const cols = Math.max(1, Math.round(b.w / bs));
+  const rows = Math.max(1, Math.round(b.h / bs));
+  ctx.drawImage(canvas, b.x, b.y, b.w, b.h, b.x, b.y, cols, rows);
+  ctx.drawImage(canvas, b.x, b.y, cols, rows, b.x, b.y, b.w, b.h);
+  ctx.restore();
+}
+/* 高斯模糊能力检测：部分老安卓内核不支持 ctx.filter，不支持时自动回退马赛克 */
+const FILTER_OK = (() => {
+  try {
+    const c = document.createElement("canvas").getContext("2d");
+    c.filter = "blur(1px)";
+    return c.filter === "blur(1px)";
+  } catch (e) { return false; }
+})();
+/* 打码渲染（屏幕预览版）：blur=高斯模糊 / solid=纯色块 / img=图片素材 / mosaic=马赛克 */
+function applyMaskScreen(b) {
+  const s = S.settings;
+  const t = s.maskType || "mosaic";
+  if (t === "blur" && FILTER_OK) {
+    const r = Math.max(1, (s.maskBlur != null ? s.maskBlur : 12) * S.zoom.scale);
+    ctx.save();
+    ctx.filter = "blur(" + r + "px)";
+    ctx.beginPath();
+    ctx.rect(b.x, b.y, b.w, b.h);
+    ctx.clip();
+    ctx.drawImage(canvas, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+    ctx.restore();
+    return;
+  }
+  if (t === "solid") {
+    ctx.save();
+    ctx.globalAlpha = s.maskSolidOpacity != null ? s.maskSolidOpacity : 1;
+    ctx.fillStyle = s.maskSolidColor || "#000000";
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+    ctx.restore();
+    return;
+  }
+  if (t === "img" && S.maskImgEl) {
+    const img = S.maskImgEl;
+    const zs = (S.zoom && S.zoom.scale) || 1;
+    /* 要多大就裁多大：按打码框的真实大小（世界坐标）从素材里裁一块，放大框=裁更大的区域 */
+    let cw = b.w / zs, ch = b.h / zs;
+    if (cw > img.width || ch > img.height) {   // 素材不够大时整体拉伸（保持框的比例）
+      const sc = Math.max(cw / img.width, ch / img.height);
+      cw = Math.round(cw / sc); ch = Math.round(ch / sc);
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(b.x, b.y, b.w, b.h);
+    ctx.clip();
+    ctx.drawImage(img, (img.width - cw) / 2, (img.height - ch) / 2, cw, ch, b.x, b.y, b.w, b.h);
+    ctx.restore();
+    return;
+  }
+  mosaicScreen(b, Math.max(3, s.mosaicSize * S.zoom.scale));
+}
+function drawWatermarkScreen() {
+  const p = curPhoto();
+  if (!p) return;
+  const s = S.settings;
+  const { scale, ox, oy } = S.zoom;
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(scale, scale);
+  if (s.wm.enabled && s.wm.text.trim()) drawWatermarkWorld(ctx, p.w, p.h, s.wm);
+  if (s.wmImg.enabled && s.wmImg.data) drawImageWatermarkWorld(ctx, p.w, p.h, s.wmImg);
+  ctx.restore();
+}
+/* 关键词水印预览：按 p.kwWmBoxes 位置实时渲染，选中的框显示蓝色描边 */
+function drawKwWmPreview() {
+  const p = curPhoto();
+  if (!p || !p.kwWmBoxes || !p.kwWmBoxes.length) return;
+  const kw = S.settings.kw;
+  const kwT = kw.wmType === "image" ? "image" : "text";
+  const ready = kwT === "image" ? !!S.kwWmImgEl : !!((kw.wmText || "").trim());
+  if (!ready) return;
+  const { scale, ox, oy } = S.zoom;
+  ctx.save();
+  ctx.translate(ox, oy);
+  ctx.scale(scale, scale);
+  for (let i = 0; i < p.kwWmBoxes.length; i++) {
+    const b = p.kwWmBoxes[i];
+    if (!kwWmBoxValid(b)) continue;
+    if (kwT === "image") drawKwImageWatermark(ctx, b, b.k, kw);
+    else drawKwTextWatermark(ctx, b, b.k, kw);
+    if (i === S.kwWmSel) {
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 2 / scale;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+      /* 四角缩放手柄（屏幕像素恒定大小） */
+      const hs = 8 / scale;
+      const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]];
+      for (const [hx, hy] of pts) {
+        ctx.fillStyle = "#3b82f6";
+        ctx.fillRect(hx - hs / 2, hy - hs / 2, hs, hs);
+      }
+    }
+  }
+  ctx.restore();
+}
+/* 世界坐标绘制水印（输出图同样复用） */
+function drawWatermarkWorld(g, W, H, wm) {
+  g.save();
+  const size = Math.round(W * wm.size / 100);
+  g.font = `${wm.bold ? "bold " : ""}${Math.max(10, size)}px sans-serif`;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillStyle = hexToRgba(wm.color, wm.opacity);
+  const text = wm.text;
+  if (wm.type === "single") {
+    const m = Math.round(W * 0.02);
+    const tw = g.measureText(text).width;
+    const fs = size;
+    let x, y;
+    const c = wm.position || "se";
+    x = c.includes("w") ? m + tw / 2 : c.includes("e") ? W - m - tw / 2 : W / 2;
+    y = c.startsWith("n") ? m + fs / 2 : c.startsWith("s") ? H - m - fs / 2 : H / 2;
+    g.fillText(text, x, y);
+  } else {
+    const step = Math.max(20, Math.round(W * wm.spacing / 100));
+    const ang = (wm.angle || -30) * Math.PI / 180;
+    g.translate(W / 2, H / 2);
+    g.rotate(ang);
+    const tw = g.measureText(text).width + step;
+    const diag = Math.sqrt(W * W + H * H) / 2 + size;
+    for (let x = -diag; x <= diag; x += tw) {
+      for (let y = -diag; y <= diag; y += step) {
+        g.fillText(text, x, y);
+      }
+    }
+  }
+  g.restore();
+}
+/* 世界坐标绘制图片水印（透明 PNG，输出图同样复用） */
+function drawImageWatermarkWorld(g, W, H, wi) {
+  const img = S.wmImgEl;
+  if (!img || !wi.data) return;
+  g.save();
+  g.globalAlpha = wi.opacity;
+  const iw = Math.round(W * wi.size / 100);
+  const ih = Math.round(iw * img.height / img.width);
+  if (wi.type === "single") {
+    const m = Math.round(W * 0.02);
+    const c = wi.position || "se";
+    const x = c.includes("w") ? m : c.includes("e") ? W - m - iw : (W - iw) / 2;
+    const y = c.startsWith("n") ? m : c.startsWith("s") ? H - m - ih : (H - ih) / 2;
+    g.drawImage(img, x, y, iw, ih);
+  } else {
+    const step = Math.max(24, Math.round(W * wi.spacing / 100));
+    for (let y = 0; y < H; y += ih + step) {
+      for (let x = 0; x < W; x += iw + step) {
+        g.drawImage(img, x, y, iw, ih);
+      }
+    }
+  }
+  g.restore();
+}
+
+/* ================= 画布交互 ================= */
+let ptrs = new Map();
+let dragState = null; // {mode:'pan'|'move'|'resize'|'draw', idx, startX, startY, boxStart, sx, sy}
+function canvasPoint(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+function screenToWorld(x, y) {
+  const { scale, ox, oy } = S.zoom;
+  return { x: (x - ox) / scale, y: (y - oy) / scale };
+}
+canvas.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, canvasPoint(e));
+  if (ptrs.size === 1) {
+    const p = canvasPoint(e);
+    if (S.ocrMode) {
+      // 识别文字模式下只允许平移/缩放，不编辑框
+      dragState = { mode: "pan", sx: p.x, sy: p.y, startZoom: { ...S.zoom } };
+      return;
+    }
+    if (S.addMode) {
+      dragState = { mode: "draw", sx: p.x, sy: p.y };
+      return;
+    }
+    /* 命中关键词水印框（优先于打码框）：四角手柄可缩放，框内拖动可微调位置 */
+    const cp = curPhoto();
+    if (cp && cp.kwWmBoxes && cp.kwWmBoxes.length) {
+      const w = screenToWorld(p.x, p.y);
+      for (let i = cp.kwWmBoxes.length - 1; i >= 0; i--) {
+        const b = cp.kwWmBoxes[i];
+        if (!kwWmBoxValid(b)) continue;
+        const sb = boxToScreen(b);
+        const hs = 10;
+        const handles = {
+          "nw": [sb.x, sb.y], "ne": [sb.x + sb.w, sb.y], "sw": [sb.x, sb.y + sb.h], "se": [sb.x + sb.w, sb.y + sb.h],
+        };
+        let hitH = null;
+        for (const k in handles) {
+          const [hx, hy] = handles[k];
+          if (Math.abs(p.x - hx) <= hs && Math.abs(p.y - hy) <= hs) { hitH = k; break; }
+        }
+        if (hitH) {
+          dragState = { mode: "kwWmResize", idx: i, handle: hitH, sx: p.x, sy: p.y, boxStart: { x: b.x, y: b.y, w: b.w, h: b.h } };
+          S.kwWmSel = i;
+          syncUI();
+          draw();
+          return;
+        }
+        if (w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h) {
+          dragState = { mode: "kwWmMove", idx: i, sx: p.x, sy: p.y, start: { x: b.x, y: b.y } };
+          S.kwWmSel = i;
+          syncUI();
+          draw();
+          return;
+        }
+      }
+    }
+    // 命中测试：手柄 → resize；框内 → move；否则 pan / 取消选中
+    const boxes = S.boxes;
+    const hit = hitTest(p);
+    if (hit && hit.hit === "handle") {
+      dragState = { mode: "resize", idx: hit.idx, handle: hit.handle, sx: p.x, sy: p.y, boxStart: { ...boxes[hit.idx] } };
+      S.sel = hit.idx;
+    } else if (hit && hit.hit === "body") {
+      dragState = { mode: "move", idx: hit.idx, sx: p.x, sy: p.y, boxStart: { ...boxes[hit.idx] } };
+      S.sel = hit.idx;
+    } else {
+      S.sel = -1;
+      S.kwWmSel = -1;
+      dragState = { mode: "pan", sx: p.x, sy: p.y, startZoom: { ...S.zoom } };
+    }
+    syncUI();
+    draw();
+  } else if (ptrs.size === 2) {
+    // 双指 → 缩放
+    const arr = [...ptrs.values()];
+    dragState = { mode: "pinch", d0: dist(arr[0], arr[1]), z0: S.zoom.scale,
+      mx: (arr[0].x + arr[1].x) / 2, my: (arr[0].y + arr[1].y) / 2,
+      wx: screenToWorld((arr[0].x + arr[1].x) / 2, (arr[0].y + arr[1].y) / 2) };
+  }
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!ptrs.has(e.pointerId)) return;
+  e.preventDefault();
+  ptrs.set(e.pointerId, canvasPoint(e));
+  if (!dragState) return;
+  const p = canvasPoint(e);
+  if (dragState.mode === "pan") {
+    S.zoom.ox = dragState.startZoom.ox + (p.x - dragState.sx);
+    S.zoom.oy = dragState.startZoom.oy + (p.y - dragState.sy);
+    draw();
+  } else if (dragState.mode === "move") {
+    const w = screenToWorld(p.x, p.y);
+    const sw = screenToWorld(dragState.sx, dragState.sy);
+    const dx = w.x - sw.x, dy = w.y - sw.y;
+    const b = S.boxes[dragState.idx];
+    b.x = dragState.boxStart.x + dx;
+    b.y = dragState.boxStart.y + dy;
+    draw();
+  } else if (dragState.mode === "kwWmMove") {
+    const cp = curPhoto();
+    const b = cp && cp.kwWmBoxes && cp.kwWmBoxes[dragState.idx];
+    if (b) {
+      const w = screenToWorld(p.x, p.y);
+      const sw = screenToWorld(dragState.sx, dragState.sy);
+      b.x = dragState.start.x + (w.x - sw.x);
+      b.y = dragState.start.y + (w.y - sw.y);
+      draw();
+    }
+  } else if (dragState.mode === "kwWmResize") {
+    const cp = curPhoto();
+    const b = cp && cp.kwWmBoxes && cp.kwWmBoxes[dragState.idx];
+    if (b) {
+      const w = screenToWorld(p.x, p.y);
+      const sw = screenToWorld(dragState.sx, dragState.sy);
+      const dx = w.x - sw.x, dy = w.y - sw.y;
+      const bs = dragState.boxStart, hx = dragState.handle;
+      let x0 = bs.x, y0 = bs.y, x1 = bs.x + bs.w, y1 = bs.y + bs.h;
+      if (hx.includes("w")) x0 = Math.min(x0 + dx, x1 - 8);
+      if (hx.includes("e")) x1 = Math.max(x1 + dx, x0 + 8);
+      if (hx.includes("n")) y0 = Math.min(y0 + dy, y1 - 8);
+      if (hx.includes("s")) y1 = Math.max(y1 + dy, y0 + 8);
+      b.x = x0; b.y = y0; b.w = x1 - x0; b.h = y1 - y0;
+      draw();
+    }
+  } else if (dragState.mode === "resize") {
+    const w = screenToWorld(p.x, p.y);
+    const sw = screenToWorld(dragState.sx, dragState.sy);
+    const dx = w.x - sw.x, dy = w.y - sw.y;
+    const bs = dragState.boxStart, b = S.boxes[dragState.idx];
+    const hx = dragState.handle;
+    let x0 = bs.x, y0 = bs.y, x1 = bs.x + bs.w, y1 = bs.y + bs.h;
+    if (hx.includes("w")) x0 = Math.min(x0 + dx, x1 - 8);
+    if (hx.includes("e")) x1 = Math.max(x1 + dx, x0 + 8);
+    if (hx.includes("n")) y0 = Math.min(y0 + dy, y1 - 8);
+    if (hx.includes("s")) y1 = Math.max(y1 + dy, y0 + 8);
+    b.x = x0; b.y = y0; b.w = x1 - x0; b.h = y1 - y0;
+    draw();
+  } else if (dragState.mode === "draw") {
+    const w = screenToWorld(p.x, p.y);
+    const sw = screenToWorld(dragState.sx, dragState.sy);
+    const x0 = Math.min(sw.x, w.x), y0 = Math.min(sw.y, w.y);
+    const x1 = Math.max(sw.x, w.x), y1 = Math.max(sw.y, w.y);
+    dragState.draft = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    draw();
+    if (dragState.draft.w > 3 && dragState.draft.h > 3) {
+      ctx.strokeStyle = "#3b82f6";
+      ctx.lineWidth = 2;
+      const b = boxToScreen(dragState.draft);
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+    }
+  } else if (dragState.mode === "pinch") {
+    const arr = [...ptrs.values()];
+    const d = dist(arr[0], arr[1]);
+    if (d > 0 && dragState.d0 > 0) {
+      const nz = clamp(dragState.z0 * (d / dragState.d0), S.fitScale * 0.25, S.fitScale * 12);
+      S.zoom.scale = nz;
+      S.zoom.ox = dragState.mx - dragState.wx.x * nz;
+      S.zoom.oy = dragState.my - dragState.wx.y * nz;
+      draw();
+    }
+  }
+});
+function endPointer(e) {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.delete(e.pointerId);
+  if (dragState && dragState.mode === "draw" && dragState.draft && dragState.draft.w > 8 && dragState.draft.h > 8) {
+    const p = curPhoto();
+    p.boxes.push({ ...dragState.draft, label: "", skip: false });
+    S.sel = p.boxes.length - 1;
+    syncBoxList();
+  }
+  if (ptrs.size === 0) {
+    dragState = null; S.addMode = false;
+    $("btnAddBox").textContent = "＋ 手动加框";
+  }
+  if (ptrs.size === 0 && dragState === null) { syncUI(); draw(); }
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function hitTest(p) {
+  const boxes = S.boxes;
+  for (let i = boxes.length - 1; i >= 0; i--) {
+    const b = boxToScreen(boxes[i]);
+    const hs = 10;
+    const handles = {
+      "nw": [b.x, b.y], "ne": [b.x + b.w, b.y], "sw": [b.x, b.y + b.h], "se": [b.x + b.w, b.y + b.h],
+    };
+    for (const k in handles) {
+      const [hx, hy] = handles[k];
+      if (Math.abs(p.x - hx) <= hs && Math.abs(p.y - hy) <= hs) {
+        return { hit: "handle", idx: i, handle: k };
+      }
+    }
+    if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) {
+      return { hit: "body", idx: i };
+    }
+  }
+  return null;
+}
+
+/* ================= OCR 价格识别 ================= */
+/* 归一化符号：全角￥、空白统一成半角 ¥ */
+function normYen(t) {
+  return (t || "").replace(/\s/g, "").replace(/￥/g, "¥");
+}
+/* 重叠去重：与已有框重叠超过 40% 视为重复 */
+function overlapDup(list, x, y, w, h) {
+  return list.some(o => {
+    const ix = Math.min(o.x + o.w, x + w) - Math.max(o.x, x);
+    const iy = Math.min(o.y + o.h, y + h) - Math.max(o.y, y);
+    if (ix <= 0 || iy <= 0) return false;
+    const minA = Math.min(o.w * o.h, w * h);
+    return minA > 0 && (ix * iy) / minA > 0.4;
+  });
+}
+/* 行级价格框提取：
+ * 规则：识别出的文字串中，凡是「数字串」（连续的数字/点/逗号，可带 ¥ 前缀）
+ *       且串内含人民币符号（¥）或小数点（. / ,）的，整体框住打码。
+ * 纯整数（如 500g、数量 3）不含符号也不含小数点，不框。
+ * （宁可误波及，不可漏打）
+ */
+function extractPriceBoxes(lines, imgW, imgH) {
+  const out = [];
+  const pushBox = (sub, label) => {
+    if (!sub) return;
+    const px = Math.max(2, sub.w * 0.08), py = Math.max(2, sub.h * 0.15);
+    let bx = clamp(sub.x - px, 0, imgW), by = clamp(sub.y - py, 0, imgH);
+    let bw = clamp(sub.w + px * 2, 2, imgW), bh = clamp(sub.h + py * 2, 2, imgH);
+    if (overlapDup(out, bx, by, bw, bh)) return;
+    out.push({ x: bx, y: by, w: bw, h: bh, label, skip: false });
+  };
+  for (const ln of lines) {
+    if (!ln || !ln.text) continue;
+    const t = normYen(ln.text);
+    for (let k = 0; k < t.length; k++) {
+      const ch = t[k];
+      if (ch !== "¥" && !/[0-9]/.test(ch)) continue;
+      let j = k;
+      let hasYen = ch === "¥", hasDot = false;
+      while (j < t.length) {
+        const c = t[j];
+        if (c === "¥") { hasYen = true; j++; }
+        else if (/[0-9.,]/.test(c)) { if (c === "." || c === ",") hasDot = true; j++; }
+        else break;
+      }
+      if (hasYen || hasDot) {
+        pushBox(slicePriceBox(ln, k, j - 1), t.slice(k, j));
+      }
+      k = j - 1;
+    }
+  }
+  return out;
+}
+/* 关键词打码：行内出现关键词时打码。mode=word 只打该词，mode=line 打整行 */
+function extractKeywordBoxes(lines, imgW, imgH, kws) {
+  const out = [];
+  const push = (x, y, w, h, label, k) => {
+    const px = Math.max(2, w * 0.08), py = Math.max(2, h * 0.15);
+    const bx = clamp(x - px, 0, imgW), by = clamp(y - py, 0, imgH);
+    const bw = clamp(w + px * 2, 2, imgW), bh = clamp(h + py * 2, 2, imgH);
+    if (overlapDup(out, bx, by, bw, bh)) return;
+    out.push({ x: bx, y: by, w: bw, h: bh, label, skip: false, k });
+  };
+  for (const ln of lines) {
+    if (!ln || !ln.text) continue;
+    const t = ln.text;
+    for (const kw of kws) {
+      const word = (kw.text || "").trim();
+      if (!word) continue;
+      let idx = 0;
+      while ((idx = t.indexOf(word, idx)) >= 0) {
+        if (kw.mode === "line") {
+          push(ln.x, ln.y, ln.w, ln.h, t, kw);
+        } else {
+          const sub = slicePriceBox(ln, idx, idx + word.length - 1);
+          if (sub) push(sub.x, sub.y, sub.w, sub.h, word, kw);
+        }
+        idx += word.length;
+      }
+    }
+  }
+  return out;
+}
+/* 按字符宽度权重估算「第 sIdx 到第 eIdx 个字符」在原行内的子框 */
+function slicePriceBox(line, sIdx, eIdx) {
+  const t = line.text;
+  let tot = 0, pre = 0;
+  for (let k = 0; k < t.length; k++) {
+    const wt = t.charCodeAt(k) > 255 ? 2 : 1;
+    if (k < sIdx) pre += wt;
+    tot += wt;
+  }
+  if (!tot) return null;
+  const x0 = line.x + (line.w * pre) / tot;
+  let mid = 0;
+  for (let k = sIdx; k <= eIdx; k++) mid += t.charCodeAt(k) > 255 ? 2 : 1;
+  const w = (line.w * mid) / tot;
+  return { x: x0, y: line.y, w: Math.max(4, w), h: line.h };
+}
+/* ================= PaddleOCR 推理（PP-OCRv4 mobile，行级结果） ================= */
+/* det 输入：短边缩放到 736、取整到 32 倍数；(v/255-0.5)/0.5 归一化 */
+function paddleDetPreprocess(img, iw, ih) {
+  const limitSide = 736;
+  let ratio = 1;
+  const m = Math.min(iw, ih);
+  if (m < limitSide) ratio = limitSide / m;
+  const rw = Math.max(1, Math.round(iw * ratio / 32) * 32);
+  const rh = Math.max(1, Math.round(ih * ratio / 32) * 32);
+  const c = document.createElement("canvas");
+  c.width = rw; c.height = rh;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+  g.drawImage(img, 0, 0, rw, rh);
+  const id = g.getImageData(0, 0, rw, rh);
+  const px = id.data;
+  const n = rw * rh;
+  const data = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    data[i] = (px[i * 4] / 255 - 0.5) / 0.5;
+    data[n + i] = (px[i * 4 + 1] / 255 - 0.5) / 0.5;
+    data[2 * n + i] = (px[i * 4 + 2] / 255 - 0.5) / 0.5;
+  }
+  return { tensor: new ort.Tensor("float32", data, [1, 3, rh, rw]), rw, rh, sx: iw / rw, sy: ih / rh };
+}
+/* 连通域（8 邻接），返回预测概率>阈值区域的包围盒与平均分 */
+function connectedComponents(pred, H, W, th) {
+  const visited = new Uint8Array(H * W);
+  const out = [];
+  for (let i = 0; i < H * W; i++) {
+    if (visited[i] || pred[i] <= th) continue;
+    const q = new Int32Array(H * W);
+    let head = 0, tail = 0;
+    q[tail++] = i; visited[i] = 1;
+    let sum = 0, cnt = 0;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    while (head < tail) {
+      const p = q[head++];
+      const cx = p % W, cy = (p - cx) / W;
+      sum += pred[p]; cnt++;
+      if (cx < x0) x0 = cx; if (cx > x1) x1 = cx;
+      if (cy < y0) y0 = cy; if (cy > y1) y1 = cy;
+      for (let ny = cy - 1; ny <= cy + 1; ny++) {
+        if (ny < 0 || ny >= H) continue;
+        for (let nx = cx - 1; nx <= cx + 1; nx++) {
+          if (nx < 0 || nx >= W) continue;
+          const np = ny * W + nx;
+          if (!visited[np] && pred[np] > th) { visited[np] = 1; q[tail++] = np; }
+        }
+      }
+    }
+    if (cnt < 9) continue;
+    out.push({ x0, y0, x1: x1 + 1, y1: y1 + 1, score: sum / cnt });
+  }
+  return out;
+}
+/* 从原图裁剪检测框（带 2px 内边距） */
+function paddleCrop(img, box) {
+  const pad = 2;
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(box.x1 - box.x0 + pad * 2));
+  c.height = Math.max(1, Math.round(box.y1 - box.y0 + pad * 2));
+  const g = c.getContext("2d");
+  g.drawImage(img, box.x0 - pad, box.y0 - pad, box.x1 - box.x0 + pad * 2, box.y1 - box.y0 + pad * 2, 0, 0, c.width, c.height);
+  return c;
+}
+/* rec 输入：高 48、等比缩放、右补 0；批量推理 */
+async function paddleRec(crops) {
+  const IMGH = 48;
+  let maxRatio = 320 / IMGH;
+  for (const c of crops) maxRatio = Math.max(maxRatio, c.width / c.height);
+  const imgW = Math.round(IMGH * maxRatio);
+  const n = crops.length;
+  const big = new Float32Array(n * 3 * IMGH * imgW);
+  for (let b = 0; b < n; b++) {
+    const c = crops[b];
+    const ratio = c.width / c.height;
+    const rw = Math.min(imgW, Math.ceil(IMGH * ratio));
+    const cc = document.createElement("canvas"); cc.width = rw; cc.height = IMGH;
+    const g = cc.getContext("2d");
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = "high";
+    g.drawImage(c, 0, 0, rw, IMGH);
+    const px = g.getImageData(0, 0, rw, IMGH).data;
+    const base = b * 3 * IMGH * imgW;
+    for (let y = 0; y < IMGH; y++) {
+      for (let x = 0; x < rw; x++) {
+        const src = (y * rw + x) * 4;
+        big[base + y * imgW + x] = (px[src] / 255 - 0.5) / 0.5;
+        big[base + IMGH * imgW + y * imgW + x] = (px[src + 1] / 255 - 0.5) / 0.5;
+        big[base + 2 * IMGH * imgW + y * imgW + x] = (px[src + 2] / 255 - 0.5) / 0.5;
+      }
+    }
+  }
+  const feeds = {};
+  feeds[S.recIn] = new ort.Tensor("float32", big, [n, 3, IMGH, imgW]);
+  const out = await S.recSession.run(feeds);
+  return out[S.recOut];
+}
+/* CTC 贪心解码：argmax -> 去相邻重复 -> 去 blank(0) */
+function ctcDecode(tensor) {
+  const dims = tensor.dims;
+  const L = dims[dims.length - 2], C = dims[dims.length - 1];
+  const data = tensor.data;
+  const ids = [];
+  let prev = -1;
+  for (let t = 0; t < L; t++) {
+    const base = t * C;
+    let best = 0, bestV = data[base];
+    for (let c = 1; c < C; c++) {
+      if (data[base + c] > bestV) { bestV = data[base + c]; best = c; }
+    }
+    if (best === 0) { prev = 0; continue; }
+    if (best === prev) continue;
+    prev = best;
+    ids.push({ id: best, conf: bestV });
+  }
+  return ids;
+}
+/* 字典：DICT 与 RapidOCR character_list 对齐（index0=字典首字符），解码时 id 从 1 开始 */
+function idsToText(ids) {
+  let s = "";
+  for (const x of ids) {
+    if (x.id >= 1 && x.id <= DICT.length) s += DICT[x.id - 1];
+    else s += " ";
+  }
+  return s;
+}
+function tensorSlice(t, b) {
+  const dims = t.dims;
+  const L = dims[1], C = dims[2];
+  return { dims: [1, L, C], data: t.data.subarray(b * L * C, (b + 1) * L * C) };
+}
+/* 整图 OCR：det -> 按行裁剪 -> rec，返回行级 [{text,x,y,w,h,score}]（原图像素坐标） */
+async function paddleOcr(img, iw, ih) {
+  const pre = paddleDetPreprocess(img, iw, ih);
+  const feeds = {};
+  feeds[S.detIn] = pre.tensor;
+  const detOut = await S.detSession.run(feeds);
+  const o = detOut[S.detOut];
+  const dims = o.dims;
+  const oh = dims[dims.length - 2], ow = dims[dims.length - 1];
+  const comps = connectedComponents(o.data, oh, ow, 0.3);
+  const boxes = [];
+  for (const cc of comps) {
+    if (cc.score < 0.5) continue;
+    const bw = cc.x1 - cc.x0, bh = cc.y1 - cc.y0;
+    if (bw < 3 || bh < 3) continue;
+    const perim = 2 * (bw + bh);
+    const d = perim > 0 ? (bw * bh * 1.6) / perim : 1;
+    const ux0 = Math.max(0, cc.x0 - Math.ceil(d)), uy0 = Math.max(0, cc.y0 - Math.ceil(d));
+    const ux1 = Math.min(ow, cc.x1 + Math.ceil(d)), uy1 = Math.min(oh, cc.y1 + Math.ceil(d));
+    if (ux1 - ux0 < 3 || uy1 - uy0 < 3) continue;
+    boxes.push({ x0: ux0 * pre.sx, y0: uy0 * pre.sy, x1: ux1 * pre.sx, y1: uy1 * pre.sy, score: cc.score });
+  }
+  /* 释放 det 大数组，帮助低内存手机回收 */
+  o.data = null; detOut[S.detOut] = null; pre.tensor = null;
+  if (!boxes.length) return [];
+  boxes.sort((a, b) => a.y0 - b.y0 || a.x0 - b.x0);
+  const crops = boxes.map(b => paddleCrop(img, b));
+  const recOut = await paddleRec(crops);
+  const lines = [];
+  for (let b = 0; b < boxes.length; b++) {
+    const ids = ctcDecode(tensorSlice(recOut, b));
+    const text = idsToText(ids);
+    if (!text) continue;
+    let conf = 0;
+    for (const x of ids) conf += x.conf;
+    lines.push({ text, x: boxes[b].x0, y: boxes[b].y0, w: boxes[b].x1 - boxes[b].x0, h: boxes[b].y1 - boxes[b].y0, score: ids.length ? conf / ids.length : 0 });
+  }
+  recOut.data = null; recOut[S.recOut] = null;
+  return lines;
+}
+async function recognizePhoto(p, idx, total) {
+  const t0 = performance.now();
+  $("progressText").textContent = `正在识别 ${idx + 1}/${total}：${p.name}`;
+  const lines = await paddleOcr(p.img, p.w, p.h);
+  ocrCachePut(p, lines);   // 写入识别结果缓存：同一张图下次直接复用
+  p.ocrPasses = [{ pass: 1, scale: 1, enhance: false, lines: lines.map(l => l.text), words: lines }];
+  p.ocrWords = lines;   // 行级词，供图上叠加直接使用（模型识别结果缓存）
+  p.recognized = true;
+  buildBoxes(p);
+  return { boxes: p.boxes, ms: Math.round(performance.now() - t0) };
+}
+/* 用缓存/已识别出的文字行重新生成打码框和关键词水印框。
+   纯 JS 逻辑，毫秒级；只有「首次识别」才需要跑模型，此后改关键词/设置只需调用本函数。 */
+function buildBoxes(p) {
+  const lines = p.ocrWords || [];
+  /* 价格打码（¥/小数点 规则，可在设置中关闭） */
+  let boxes = [];
+  if (S.settings.kw && S.settings.kw.priceEnabled !== false) {
+    boxes = extractPriceBoxes(lines, p.w, p.h);
+  }
+  /* 关键词打码（词本身或整行）；只处理用途为「打码」的关键词 */
+  const kws = S.settings.kw && S.settings.kw.enabled ? S.settings.kw.list.filter(k => k && k.mask !== false) : [];
+  if (kws.length) {
+    const kwBoxes = extractKeywordBoxes(lines, p.w, p.h, kws);
+    for (const b of kwBoxes) {
+      let replaced = false;
+      for (let i = 0; i < boxes.length; i++) {
+        const o = boxes[i];
+        const ix = Math.min(o.x + o.w, b.x + b.w) - Math.max(o.x, b.x);
+        const iy = Math.min(o.y + o.h, b.y + b.h) - Math.max(o.y, b.y);
+        if (ix <= 0 || iy <= 0) continue;
+        const minA = Math.min(o.w * o.h, b.w * b.h);
+        const ov = minA > 0 ? (ix * iy) / minA : 0;
+        if (ov > 0.4) {
+          /* 新框更大（如整行）则替换旧框，否则保留旧框 */
+          if (b.w * b.h >= o.w * o.h) boxes[i] = b;
+          replaced = true;
+          break;
+        }
+      }
+      if (!replaced) boxes.push(b);
+    }
+  }
+  p.boxes = boxes;
+  /* 关键词水印框：按当前关键词列表重建，微调页可拖动微调位置 */
+  p.kwWmBoxes = [];
+  const kwSt = S.settings.kw;
+  if (kwSt && kwSt.wmEnabled && lines.length) {
+    const wmKws = kwSt.list.filter(k => k && k.wm);
+    if (wmKws.length) {
+      const kwT = kwSt.wmType === "image" ? "image" : "text";
+      const ready = kwT === "image" ? !!kwSt.wmImgData : !!((kwSt.wmText || "").trim());
+      if (ready) {
+        const kb = extractKeywordBoxes(lines, p.w, p.h, wmKws);
+        const range = (kwSt.wmRange || 15) / 100;
+        p.kwWmBoxes = kb.map(b => {
+          const ex = b.w * range, ey = b.h * range;
+          return { x: b.x - ex, y: b.y - ey, w: b.w + ex * 2, h: b.h + ey * 2, k: b.k };
+        });
+      }
+    }
+  }
+  return boxes;
+}
+/* 把识别出的文字行画到图上对应位置（白底红框，文字压在原位置） */
+function drawOcrOverlay(p, scale, ox, oy) {
+  const words = p.ocrWords || [];
+  if (!words.length) {
+    ctx.fillStyle = "rgba(255,255,255,.9)";
+    ctx.font = "14px sans-serif";
+    ctx.fillText("这张图还没有识别文字，请先在步骤 1 点「开始识别并打码」", 12, 22);
+    return;
+  }
+  for (const w of words) {
+    const sx = w.x * scale + ox, sy = w.y * scale + oy;
+    const sw = w.w * scale, sh = w.h * scale;
+    if (sx + sw < 0 || sy + sh < 0 || sx > canvas.width || sy > canvas.height) continue;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(sx - 1, sy - 1, sw + 2, sh + 2);
+    ctx.clip();
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    ctx.fillRect(sx - 1, sy - 1, sw + 2, sh + 2);
+    ctx.fillStyle = "#111111";
+    ctx.font = Math.max(8, sh * 0.85) + "px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(w.text, sx + 1, sy + sh / 2 + 1);
+    ctx.restore();
+    ctx.strokeStyle = "rgba(239,68,68,.85)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(sx - 1.5, sy - 1.5, sw + 3, sh + 3);
+  }
+  // 顶部提示
+  const hint = "识别文字模式 · 红框=识别出的文字行 · 点「🔤 识别文字」关闭";
+  ctx.font = "12px sans-serif";
+  const tw = ctx.measureText(hint).width + 24;
+  ctx.fillStyle = "rgba(0,0,0,.6)";
+  ctx.fillRect(8, 8, tw, 24);
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(hint, 18, 20);
+}
+/* 弹出查看某张照片的 OCR 识别文字（两遍结果分行展示） */
+function showOcrText(p) {
+  const body = $("ocrBody"), title = $("ocrTitle");
+  if (!p) { toast("请先选择一张照片"); return; }
+  title.textContent = "OCR 识别文字：" + p.name;
+  if (!p.ocrPasses || !p.ocrPasses.length) {
+    body.innerHTML = '<span class="ph">这张图还没有识别记录，请先在步骤 1 点「开始识别并打码」。</span>';
+  } else {
+    const parts = [];
+    for (const pass of p.ocrPasses) {
+      const tag = "PaddleOCR 识别结果";
+      parts.push("—— " + tag + " ——");
+      parts.push(pass.lines.length ? pass.lines.join("\n") : "（未识别出文字）");
+      parts.push("");
+    }
+    body.textContent = parts.join("\n");
+  }
+  $("ocrOverlay").classList.remove("hidden");
+}
+function closeOcrText() { $("ocrOverlay").classList.add("hidden"); }
+
+/* ================= 步骤流程 ================= */
+function setStep(n) {
+  S.step = n;
+  for (let i = 1; i <= 3; i++) $("sec" + i).classList.toggle("hidden", i !== n);
+  document.querySelectorAll(".steps .step").forEach((el, i) => el.classList.toggle("active", i + 1 === n));
+  if (n === 3) {
+    S.cur = Math.max(0, S.cur);
+    renderTabs();
+    S.boxes = curPhoto().boxes;
+    resetCanvas();
+  }
+  window.scrollTo(0, 0);
+}
+function renderTabs() {
+  const wrap = $("photoTabs");
+  wrap.innerHTML = "";
+  S.photos.forEach((p, i) => {
+    const d = document.createElement("div");
+    d.className = "th" + (i === S.cur ? " cur" : "");
+    const n = p.boxes.filter(b => !b.skip).length;
+    d.innerHTML = `<img src="${p.img.src}"><div class="tag">${n ? n + " 处" : "未框"}</div>`;
+    d.onclick = () => { S.cur = i; S.boxes = p.boxes; renderTabs(); resetCanvas(); syncBoxList(); };
+    wrap.appendChild(d);
+  });
+}
+function syncBoxList() {
+  const p = curPhoto();
+  const wrap = $("boxList");
+  if (!p) { wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<p class="loading-msg" style="margin:0 0 6px;">共 ${p.boxes.filter(b=>!b.skip).length} 个价格框（点击勾选框可临时不参与打码）</p>`;
+  p.boxes.forEach((b, i) => {
+    const d = document.createElement("div");
+    d.className = "bi";
+    d.innerHTML = `<input type="checkbox" class="chk" ${b.skip ? "" : "checked"}>
+      <span class="nm">${b.label ? b.label : "手动框 " + (i + 1)}</span>
+      <span class="sz">${Math.round(b.w)}×${Math.round(b.h)}</span>`;
+    d.querySelector(".chk").onchange = (e) => { b.skip = !e.target.checked; draw(); };
+    d.onclick = (e) => { if (e.target.tagName === "INPUT") return; S.sel = i; draw(); };
+    wrap.appendChild(d);
+  });
+}
+function syncUI() {
+  const p = curPhoto();
+  $("delFloat").classList.toggle("hidden", S.sel < 0);
+  syncBoxList();
+}
+
+/* ================= 设置面板 ================= */
+function buildPosGrid(wrap, onPick) {
+  if (wrap.dataset.built) return;
+  wrap.dataset.built = "1";
+  const pos = ["nw", "n", "ne", "w", "c", "e", "sw", "s", "se"];
+  const names = ["左上", "上中", "右上", "左中", "居中", "右中", "左下", "下中", "右下"];
+  pos.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.textContent = names[i];
+    b.dataset.p = p;
+    b.onclick = () => { onPick(p); updateSettingsUI(); };
+    wrap.appendChild(b);
+  });
+}
+function buildPosButtons() {
+  buildPosGrid($("wmPos"), p => { S.settings.wm.position = p; saveSettings(); });
+  buildPosGrid($("wmImgPos"), p => { S.settings.wmImg.position = p; saveSettings(); });
+}
+/* ================= 图片水印 ================= */
+/* 透明度预览：棋盘格背景上以当前透明度绘制上传图片 */
+function updateWmImgPreview() {
+  const cv = $("wmImgPreview");
+  const img = S.wmImgEl;
+  if (!cv) return;
+  const W = 220, H = 110, cs = 12;
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  for (let y = 0; y < H; y += cs) {
+    for (let x = 0; x < W; x += cs) {
+      g.fillStyle = ((x / cs + y / cs) % 2 === 0) ? "#f2f2f2" : "#d0d0d0";
+      g.fillRect(x, y, cs, cs);
+    }
+  }
+  if (!img) {
+    g.fillStyle = "#9ca3af";
+    g.font = "13px sans-serif";
+    g.textAlign = "center";
+    g.fillText("未上传图片", W / 2, H / 2 + 4);
+    return;
+  }
+  const op = S.settings.wmImg.opacity;
+  const s = Math.min(W * 0.85 / img.width, H * 0.85 / img.height);
+  const w = Math.round(img.width * s), h = Math.round(img.height * s);
+  g.globalAlpha = op;
+  g.drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
+  g.globalAlpha = 1;
+}
+/* 上传 PNG：缩放至最长边 512 后存 dataURL（便于持久化与方案保存） */
+function handleWmImgFile(file) {
+  const rd = new FileReader();
+  rd.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 512;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > max) {
+        const r = max / Math.max(w, h);
+        w = Math.round(w * r); h = Math.round(h * r);
+      }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      const data = c.toDataURL("image/png");
+      S.settings.wmImg.data = data;
+      const img2 = new Image();
+      img2.onload = () => { S.wmImgEl = img2; updateWmImgPreview(); };
+      img2.src = data;
+      updateSettingsUI();
+      saveSettings();
+      toast("图片水印已添加，可调整透明度");
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+/* 关键词水印独立图片预览：棋盘格背景 + 当前透明度 */
+function updateKwWmImgPreview() {
+  const cv = $("kwWmImgPreview");
+  const img = S.kwWmImgEl;
+  if (!cv) return;
+  const W = 220, H = 110, cs = 12;
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  for (let y = 0; y < H; y += cs) {
+    for (let x = 0; x < W; x += cs) {
+      g.fillStyle = ((x / cs + y / cs) % 2 === 0) ? "#f2f2f2" : "#d0d0d0";
+      g.fillRect(x, y, cs, cs);
+    }
+  }
+  if (!img) {
+    g.fillStyle = "#9ca3af";
+    g.font = "13px sans-serif";
+    g.textAlign = "center";
+    g.fillText("未上传图片", W / 2, H / 2 + 4);
+    return;
+  }
+  const op = S.settings.kw.wmImgOpacity;
+  const s = Math.min(W * 0.85 / img.width, H * 0.85 / img.height);
+  const w = Math.round(img.width * s), h = Math.round(img.height * s);
+  g.globalAlpha = op;
+  g.drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
+  g.globalAlpha = 1;
+}
+/* 上传关键词水印独立图片：缩放至最长边 512 后存 dataURL */
+function handleKwWmImgFile(file) {
+  const rd = new FileReader();
+  rd.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 512;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > max) {
+        const r = max / Math.max(w, h);
+        w = Math.round(w * r); h = Math.round(h * r);
+      }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      const data = c.toDataURL("image/png");
+      S.settings.kw.wmImgData = data;
+      const img2 = new Image();
+      img2.onload = () => { S.kwWmImgEl = img2; updateKwWmImgPreview(); };
+      img2.src = data;
+      updateSettingsUI();
+      saveSettings();
+      toast("关键词水印图片已添加");
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+/* 打码素材图预览（棋盘格背景） */
+function updateMaskImgPreview() {
+  const cv = $("maskImgPreview");
+  const img = S.maskImgEl;
+  if (!cv) return;
+  const W = 220, H = 110, cs = 12;
+  cv.width = W; cv.height = H;
+  const g = cv.getContext("2d");
+  for (let y = 0; y < H; y += cs) {
+    for (let x = 0; x < W; x += cs) {
+      g.fillStyle = ((x / cs + y / cs) % 2 === 0) ? "#f2f2f2" : "#d0d0d0";
+      g.fillRect(x, y, cs, cs);
+    }
+  }
+  if (!img) {
+    g.fillStyle = "#9ca3af";
+    g.font = "13px sans-serif";
+    g.textAlign = "center";
+    g.fillText("未上传素材", W / 2, H / 2 + 4);
+    return;
+  }
+  const s = Math.min(W * 0.85 / img.width, H * 0.85 / img.height);
+  const w = Math.round(img.width * s), h = Math.round(img.height * s);
+  g.drawImage(img, Math.round((W - w) / 2), Math.round((H - h) / 2), w, h);
+}
+/* 上传打码素材图：保留高分辨率（最长边 2048），放大打码框时能裁出更大的区域 */
+function handleMaskImgFile(file) {
+  const rd = new FileReader();
+  rd.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 2048;
+      let w = img.width, h = img.height;
+      if (Math.max(w, h) > max) {
+        const r = max / Math.max(w, h);
+        w = Math.round(w * r); h = Math.round(h * r);
+      }
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      /* 大图用 JPEG 压缩体积（遮挡纹理 0.9 质量看不出差异），避免撑爆本地存储 */
+      const data = (w * h > 1024 * 1024) ? c.toDataURL("image/jpeg", 0.9) : c.toDataURL("image/png");
+      S.settings.maskImgData = data;
+      const img2 = new Image();
+      img2.onload = () => { S.maskImgEl = img2; updateMaskImgPreview(); };
+      img2.src = data;
+      updateSettingsUI();
+      saveSettings();
+      toast("打码素材已添加，打码时会按框大小裁剪它遮挡");
+    };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+function updateSettingsUI() {
+  const s = S.settings;
+  $("mosaicSize").value = s.mosaicSize;
+  $("mosaicSizeVal").textContent = s.mosaicSize + "px";
+  if ($("saveBatch")) $("saveBatch").value = String(s.saveBatch || 3);
+  const mType = s.maskType === "solid" ? "solid" : s.maskType === "mosaic" ? "mosaic" : s.maskType === "img" ? "img" : "blur";
+  $("maskTypeMosaic").classList.toggle("on", mType === "mosaic");
+  $("maskTypeBlur").classList.toggle("on", mType === "blur");
+  $("maskTypeSolid").classList.toggle("on", mType === "solid");
+  $("maskTypeImg").classList.toggle("on", mType === "img");
+  $("maskMosaicSet").classList.toggle("hidden", mType !== "mosaic");
+  $("maskBlurSet").classList.toggle("hidden", mType !== "blur");
+  $("maskSolidSet").classList.toggle("hidden", mType !== "solid");
+  $("maskImgSet").classList.toggle("hidden", mType !== "img");
+  $("maskImgArea").classList.toggle("hidden", !s.maskImgData);
+  updateMaskImgPreview();
+  $("maskBlur").value = s.maskBlur;
+  $("maskBlurVal").textContent = s.maskBlur + "px";
+  $("maskSolidColor").value = s.maskSolidColor;
+  $("maskSolidOpacity").value = s.maskSolidOpacity;
+  $("maskSolidOpacityVal").textContent = Math.round(s.maskSolidOpacity * 100) + "%";
+  $("wmEnabled").checked = s.wm.enabled;
+  $("wmType").value = s.wm.type;
+  $("wmText").value = s.wm.text;
+  $("wmSize").value = s.wm.size;
+  $("wmSizeVal").textContent = s.wm.size + "%";
+  $("wmColor").value = s.wm.color;
+  $("wmOpacity").value = s.wm.opacity;
+  $("wmOpacityVal").textContent = Math.round(s.wm.opacity * 100) + "%";
+  $("wmSpacing").value = s.wm.spacing;
+  $("wmSpacingVal").textContent = s.wm.spacing + "%";
+  $("wmAngle").value = s.wm.angle;
+  $("wmAngleVal").textContent = s.wm.angle + "°";
+  $("wmImgEnabled").checked = s.wmImg.enabled;
+  $("wmOcrEnabled").checked = s.wmOcr.enabled;
+  $("wmOcrType").value = s.wmOcr.type;
+  $("wmOcrAll").checked = s.wmOcr.allText;
+  $("wmOcrOrder").checked = s.wmOcr.orderNo;
+  $("wmOcrMinLen").value = s.wmOcr.minLen;
+  $("wmOcrMinLenVal").textContent = s.wmOcr.minLen + " 位";
+  /* 设置区默认收起，点击标题行展开/收起 */
+  $("wmOcrSet").classList.toggle("hidden", !S.wmOcrOpen);
+  $("wmOcrArrow").textContent = S.wmOcrOpen ? "▾" : "▸";
+  /* 文字水印卡片默认收起，点标题行展开/收起 */
+  $("wmCardBody").classList.toggle("hidden", !S.wmCardOpen);
+  $("wmCardArrow").textContent = S.wmCardOpen ? "▾" : "▸";
+  /* 图片水印卡片默认收起，点标题行展开/收起 */
+  $("wmImgCardBody").classList.toggle("hidden", !S.wmImgCardOpen);
+  $("wmImgCardArrow").textContent = S.wmImgCardOpen ? "▾" : "▸";
+  $("wmImgType").value = s.wmImg.type;
+  $("wmImgOpacity").value = s.wmImg.opacity;
+  $("wmImgOpacityVal").textContent = Math.round(s.wmImg.opacity * 100) + "%";
+  $("wmImgSize").value = s.wmImg.size;
+  $("wmImgSizeVal").textContent = s.wmImg.size + "%";
+  $("wmImgSpacing").value = s.wmImg.spacing;
+  $("wmImgSpacingVal").textContent = s.wmImg.spacing + "%";
+  $("wmImgArea").classList.toggle("hidden", !s.wmImg.data);
+  $("wmImgSingleSet").classList.toggle("hidden", s.wmImg.type !== "single");
+  $("wmImgTileSet").classList.toggle("hidden", s.wmImg.type !== "tile");
+  document.querySelectorAll("#wmImgPos button").forEach(b => b.classList.toggle("on", b.dataset.p === s.wmImg.position));
+  updateWmImgPreview();
+  $("kwEnabled").checked = s.kw.enabled;
+  $("kwPriceEnabled").checked = s.kw.priceEnabled !== false;
+  $("kwWmEnabled").checked = s.kw.wmEnabled;
+  $("kwWmSet").classList.toggle("hidden", !s.kw.wmEnabled);
+  const kwT = s.kw.wmType === "image" ? "image" : "text";
+  $("kwWmTypeText").classList.toggle("on", kwT === "text");
+  $("kwWmTypeImage").classList.toggle("on", kwT === "image");
+  $("kwWmTextSet").classList.toggle("hidden", kwT !== "text");
+  $("kwWmImgSet").classList.toggle("hidden", kwT !== "image");
+  $("kwWmText").value = s.kw.wmText;
+  $("kwWmSize").value = s.kw.wmSize;
+  $("kwWmSizeVal").textContent = s.kw.wmSize + "%";
+  $("kwWmColor").value = s.kw.wmColor;
+  $("kwWmOpacity").value = s.kw.wmOpacity;
+  $("kwWmOpacityVal").textContent = Math.round(s.kw.wmOpacity * 100) + "%";
+  $("kwWmImgSize").value = s.kw.wmImgSize;
+  $("kwWmImgSizeVal").textContent = s.kw.wmImgSize + "%";
+  $("kwWmImgOpacity").value = s.kw.wmImgOpacity;
+  $("kwWmImgOpacityVal").textContent = Math.round(s.kw.wmImgOpacity * 100) + "%";
+  $("kwWmImgArea").classList.toggle("hidden", !s.kw.wmImgData);
+  updateKwWmImgPreview();
+  $("kwWmRange").value = s.kw.wmRange;
+  $("kwWmRangeVal").textContent = s.kw.wmRange + "%";
+  $("kwWmAngle").value = s.kw.wmAngle;
+  $("kwWmAngleVal").textContent = s.kw.wmAngle + "°";
+  const kpal = $("kwWmPalette");
+  if (!kpal.dataset.built) {
+    kpal.dataset.built = "1";
+    ["#ffffff", "#000000", "#ef4444", "#f59e0b", "#16a34a", "#2563eb"].forEach(c => {
+      const b = document.createElement("button");
+      b.style.background = c;
+      b.onclick = () => { S.settings.kw.wmColor = c; $("kwWmColor").value = c; saveSettings(); };
+      kpal.appendChild(b);
+    });
+  }
+  renderKwList();
+  $("wmSingleSet").classList.toggle("hidden", s.wm.type !== "single");
+  $("wmTileSet").classList.toggle("hidden", s.wm.type !== "tile");
+  document.querySelectorAll("#wmPos button").forEach(b => b.classList.toggle("on", b.dataset.p === s.wm.position));
+  const pal = $("wmPalette");
+  if (!pal.dataset.built) {
+    pal.dataset.built = "1";
+    ["#ffffff", "#000000", "#ef4444", "#f59e0b", "#16a34a", "#2563eb"].forEach(c => {
+      const b = document.createElement("button");
+      b.style.background = c;
+      b.onclick = () => { S.settings.wm.color = c; $("wmColor").value = c; saveSettings(); };
+      pal.appendChild(b);
+    });
+  }
+}
+function renderKwList() {
+  const wrap = $("kwList");
+  const list = S.settings.kw.list;
+  if (!list.length) {
+    wrap.innerHTML = '<span class="kw-tip">暂无关键词，可在下方添加。</span>';
+    return;
+  }
+  wrap.innerHTML = "";
+  list.forEach((kw, i) => {
+    const row = document.createElement("div");
+    row.className = "kw-row";
+    const txt = document.createElement("span");
+    txt.className = "kw-txt";
+    txt.textContent = kw.text;
+    const mWord = document.createElement("button");
+    mWord.textContent = "词本身";
+    mWord.className = "mini-btn" + (kw.mode === "word" ? " on" : "");
+    mWord.onclick = () => { kw.mode = "word"; saveSettings(); renderKwList(); };
+    const mLine = document.createElement("button");
+    mLine.textContent = "整行";
+    mLine.className = "mini-btn" + (kw.mode === "line" ? " on" : "");
+    mLine.onclick = () => { kw.mode = "line"; saveSettings(); renderKwList(); };
+    const bMask = document.createElement("button");
+    bMask.textContent = "打码";
+    bMask.className = "mini-btn" + (kw.mask !== false ? " on" : "");
+    bMask.onclick = () => { kw.mask = kw.mask !== false ? false : true; saveSettings(); renderKwList(); };
+    const bWm = document.createElement("button");
+    bWm.textContent = "水印";
+    bWm.className = "mini-btn" + (kw.wm ? " on" : "");
+    bWm.onclick = () => { kw.wm = !kw.wm; saveSettings(); renderKwList(); };
+    const bSet = document.createElement("button");
+    bSet.textContent = "⚙";
+    bSet.title = "水印独立设置（大小 / 位置偏移）";
+    bSet.className = "mini-btn" + (kw.wmSize != null || kw.wmPosDir || kw.wmPosDist != null ? " on" : "");
+    bSet.onclick = () => openKwWmDlg(i);
+    const del = document.createElement("button");
+    del.textContent = "✕";
+    del.className = "mini-btn del";
+    del.onclick = () => { S.settings.kw.list.splice(i, 1); saveSettings(); renderKwList(); };
+    row.appendChild(txt); row.appendChild(mWord); row.appendChild(mLine);
+    row.appendChild(bMask); row.appendChild(bWm); row.appendChild(bSet); row.appendChild(del);
+    wrap.appendChild(row);
+  });
+}
+/* ================= 关键词水印独立设置弹窗 ================= */
+let kwWmDlgIdx = -1;
+function openKwWmDlg(i) {
+  const list = S.settings.kw.list;
+  if (i < 0 || i >= list.length) return;
+  kwWmDlgIdx = i;
+  const k = list[i];
+  $("kwWmDlgKw").textContent = "关键词：" + k.text + "（仅对该词生效，其余词仍用全局设置）";
+  const size = k.wmSize != null ? k.wmSize : S.settings.kw.wmSize;
+  $("kwWmDlgSize").value = size;
+  $("kwWmDlgSizeVal").textContent = size + "%";
+  const dir = k.wmPosDir || "center";
+  document.querySelectorAll("#kwWmDlgPos button").forEach(b => b.classList.toggle("on", b.dataset.p === dir));
+  const dist = k.wmPosDist != null ? k.wmPosDist : 0;
+  $("kwWmDlgDist").value = dist;
+  $("kwWmDlgDistVal").textContent = dist + "%";
+  $("kwWmDlg").classList.remove("hidden");
+}
+function closeKwWmDlg() {
+  $("kwWmDlg").classList.add("hidden");
+  kwWmDlgIdx = -1;
+}
+function kwWmDlgCurrent() {
+  const list = S.settings.kw.list;
+  return (kwWmDlgIdx >= 0 && kwWmDlgIdx < list.length) ? list[kwWmDlgIdx] : null;
+}
+function bindSettings() {
+  $("mosaicSize").oninput = (e) => { S.settings.mosaicSize = +e.target.value; $("mosaicSizeVal").textContent = e.target.value + "px"; saveSettings(); };
+  $("saveBatch").onchange = (e) => { S.settings.saveBatch = Math.min(6, Math.max(1, +e.target.value)); saveSettings(); toast("已设置每批保存 " + S.settings.saveBatch + " 张"); };
+  const setMaskType = (t) => { S.settings.maskType = t; updateSettingsUI(); saveSettings(); };
+  $("maskTypeMosaic").onclick = () => setMaskType("mosaic");
+  $("maskTypeBlur").onclick = () => setMaskType("blur");
+  $("maskTypeSolid").onclick = () => setMaskType("solid");
+  $("maskTypeImg").onclick = () => setMaskType("img");
+  $("maskBlur").oninput = (e) => { S.settings.maskBlur = +e.target.value; $("maskBlurVal").textContent = e.target.value + "px"; saveSettings(); };
+  $("maskSolidColor").oninput = (e) => { S.settings.maskSolidColor = e.target.value; saveSettings(); };
+  $("maskSolidOpacity").oninput = (e) => { S.settings.maskSolidOpacity = +e.target.value; $("maskSolidOpacityVal").textContent = Math.round(e.target.value * 100) + "%"; saveSettings(); };
+  $("btnMaskImgUpload").onclick = () => $("maskImgInput").click();
+  $("maskImgInput").onchange = (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    if (!f.type.startsWith("image/")) { toast("请选择图片文件"); return; }
+    handleMaskImgFile(f);
+  };
+  $("maskImgRemove").onclick = () => {
+    S.settings.maskImgData = "";
+    S.maskImgEl = null;
+    updateSettingsUI();
+    saveSettings();
+    toast("已移除打码素材");
+  };
+  $("wmEnabled").onchange = (e) => { S.settings.wm.enabled = e.target.checked; saveSettings(); };
+  $("wmType").onchange = (e) => { S.settings.wm.type = e.target.value; updateSettingsUI(); saveSettings(); };
+  $("wmText").oninput = (e) => { S.settings.wm.text = e.target.value; saveSettings(); };
+  $("wmSize").oninput = (e) => { S.settings.wm.size = +e.target.value; $("wmSizeVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("wmColor").oninput = (e) => { S.settings.wm.color = e.target.value; saveSettings(); };
+  $("wmOpacity").oninput = (e) => { S.settings.wm.opacity = +e.target.value; $("wmOpacityVal").textContent = Math.round(e.target.value * 100) + "%"; saveSettings(); };
+  $("wmSpacing").oninput = (e) => { S.settings.wm.spacing = +e.target.value; $("wmSpacingVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("wmAngle").oninput = (e) => { S.settings.wm.angle = +e.target.value; $("wmAngleVal").textContent = e.target.value + "°"; saveSettings(); };
+  $("wmImgEnabled").onchange = (e) => { S.settings.wmImg.enabled = e.target.checked; saveSettings(); };
+  $("wmOcrEnabled").onchange = (e) => { S.settings.wmOcr.enabled = e.target.checked; saveSettings(); };
+  $("wmOcrType").onchange = (e) => { S.settings.wmOcr.type = e.target.value; saveSettings(); };
+  $("wmOcrAll").onchange = (e) => { S.settings.wmOcr.allText = e.target.checked; saveSettings(); };
+  $("wmOcrOrder").onchange = (e) => { S.settings.wmOcr.orderNo = e.target.checked; saveSettings(); };
+  $("wmOcrMinLen").oninput = (e) => { S.settings.wmOcr.minLen = +e.target.value; $("wmOcrMinLenVal").textContent = e.target.value + " 位"; saveSettings(); };
+  /* 点击标题行展开/收起「识别文字位置打水印」设置区（默认收起） */
+  $("wmOcrHead").onclick = () => {
+    S.wmOcrOpen = !S.wmOcrOpen;
+    $("wmOcrSet").classList.toggle("hidden", !S.wmOcrOpen);
+    $("wmOcrArrow").textContent = S.wmOcrOpen ? "▾" : "▸";
+  };
+  /* 点击标题行展开/收起「文字水印」卡片（默认收起） */
+  $("wmCardHead").onclick = () => {
+    S.wmCardOpen = !S.wmCardOpen;
+    $("wmCardBody").classList.toggle("hidden", !S.wmCardOpen);
+    $("wmCardArrow").textContent = S.wmCardOpen ? "▾" : "▸";
+  };
+  /* 点击标题行展开/收起「图片水印」卡片（默认收起） */
+  $("wmImgCardHead").onclick = () => {
+    S.wmImgCardOpen = !S.wmImgCardOpen;
+    $("wmImgCardBody").classList.toggle("hidden", !S.wmImgCardOpen);
+    $("wmImgCardArrow").textContent = S.wmImgCardOpen ? "▾" : "▸";
+  };
+  $("wmImgType").onchange = (e) => { S.settings.wmImg.type = e.target.value; updateSettingsUI(); saveSettings(); };
+  $("wmImgOpacity").oninput = (e) => {
+    S.settings.wmImg.opacity = +e.target.value;
+    $("wmImgOpacityVal").textContent = Math.round(e.target.value * 100) + "%";
+    updateWmImgPreview();
+    saveSettings();
+  };
+  $("wmImgSize").oninput = (e) => { S.settings.wmImg.size = +e.target.value; $("wmImgSizeVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("wmImgSpacing").oninput = (e) => { S.settings.wmImg.spacing = +e.target.value; $("wmImgSpacingVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("btnWmImgUpload").onclick = () => $("wmImgInput").click();
+  $("wmImgInput").onchange = (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.type !== "image/png") { toast("请选择 PNG 格式的透明图片"); return; }
+    handleWmImgFile(f);
+  };
+  $("wmImgRemove").onclick = () => {
+    S.settings.wmImg.data = "";
+    S.wmImgEl = null;
+    updateSettingsUI();
+    saveSettings();
+    toast("已移除图片水印");
+  };
+  $("kwEnabled").onchange = (e) => { S.settings.kw.enabled = e.target.checked; saveSettings(); };
+  $("kwPriceEnabled").onchange = (e) => { S.settings.kw.priceEnabled = e.target.checked; saveSettings(); };
+  $("kwWmEnabled").onchange = (e) => { S.settings.kw.wmEnabled = e.target.checked; updateSettingsUI(); saveSettings(); };
+  const setKwWmType = (t) => {
+    S.settings.kw.wmType = t;
+    updateSettingsUI();
+    saveSettings();
+  };
+  $("kwWmTypeText").onclick = () => setKwWmType("text");
+  $("kwWmTypeImage").onclick = () => setKwWmType("image");
+  $("kwWmText").oninput = (e) => { S.settings.kw.wmText = e.target.value; saveSettings(); };
+  $("kwWmSize").oninput = (e) => { S.settings.kw.wmSize = +e.target.value; $("kwWmSizeVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("kwWmColor").oninput = (e) => { S.settings.kw.wmColor = e.target.value; saveSettings(); };
+  $("kwWmOpacity").oninput = (e) => { S.settings.kw.wmOpacity = +e.target.value; $("kwWmOpacityVal").textContent = Math.round(e.target.value * 100) + "%"; saveSettings(); };
+  $("kwWmImgSize").oninput = (e) => { S.settings.kw.wmImgSize = +e.target.value; $("kwWmImgSizeVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("kwWmImgOpacity").oninput = (e) => { S.settings.kw.wmImgOpacity = +e.target.value; $("kwWmImgOpacityVal").textContent = Math.round(e.target.value * 100) + "%"; updateKwWmImgPreview(); saveSettings(); };
+  $("btnKwWmImgUpload").onclick = () => $("kwWmImgInput").click();
+  $("kwWmImgInput").onchange = (e) => {
+    const f = e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    if (f.type !== "image/png") { toast("请选择 PNG 格式的透明图片"); return; }
+    handleKwWmImgFile(f);
+  };
+  $("kwWmImgRemove").onclick = () => {
+    S.settings.kw.wmImgData = "";
+    S.kwWmImgEl = null;
+    updateSettingsUI();
+    saveSettings();
+    toast("已移除关键词水印图片");
+  };
+  $("kwWmRange").oninput = (e) => { S.settings.kw.wmRange = +e.target.value; $("kwWmRangeVal").textContent = e.target.value + "%"; saveSettings(); };
+  $("kwWmAngle").oninput = (e) => { S.settings.kw.wmAngle = +e.target.value; $("kwWmAngleVal").textContent = e.target.value + "°"; saveSettings(); };
+  const addKw = () => {
+    const v = $("kwInput").value.trim();
+    if (!v) { toast("请输入关键词"); return; }
+    S.settings.kw.list.push({ text: v, mode: "word", mask: true, wm: false });
+    $("kwInput").value = "";
+    saveSettings();
+    renderKwList();
+  };
+  $("kwAdd").onclick = addKw;
+  $("kwInput").onkeydown = (e) => { if (e.key === "Enter") addKw(); };
+  $("kwWmDlgSize").oninput = (e) => {
+    const k = kwWmDlgCurrent();
+    if (!k) return;
+    k.wmSize = +e.target.value;
+    $("kwWmDlgSizeVal").textContent = e.target.value + "%";
+    saveSettings(); renderKwList(); draw();
+  };
+  $("kwWmDlgDist").oninput = (e) => {
+    const k = kwWmDlgCurrent();
+    if (!k) return;
+    k.wmPosDist = +e.target.value;
+    $("kwWmDlgDistVal").textContent = e.target.value + "%";
+    saveSettings(); draw();
+  };
+  $("kwWmDlgPos").onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const k = kwWmDlgCurrent();
+    if (!k) return;
+    k.wmPosDir = b.dataset.p;
+    document.querySelectorAll("#kwWmDlgPos button").forEach(x => x.classList.toggle("on", x === b));
+    saveSettings(); renderKwList(); draw();
+  };
+  $("kwWmDlgReset").onclick = () => {
+    const k = kwWmDlgCurrent();
+    if (!k) return;
+    delete k.wmSize; delete k.wmPosDir; delete k.wmPosDist;
+    saveSettings(); renderKwList(); closeKwWmDlg();
+    toast("已恢复为全局默认");
+  };
+  $("kwWmDlgOk").onclick = closeKwWmDlg;
+  $("btnPreview").onclick = () => startPreview();
+  $("btnPreviewClose").onclick = closePreview;
+}
+
+/* ================= 步骤1 实时预览（识别第一张图作为样板） ================= */
+async function startPreview() {
+  const p = S.photos[0];
+  if (!p) { toast("请先选择照片"); return; }
+  if (S.engineBusy) return;
+  if (p.ocrWords) {
+    /* 文字已缓存：只按当前设置重新生成打码框/水印框（纯 JS，秒级，不重跑模型） */
+    buildBoxes(p);
+    toast("已按当前设置重新标记");
+    openPreview();
+    return;
+  }
+  if (await applyCachedOcr(p)) {
+    /* 识别结果缓存命中：不加载引擎、不跑模型 */
+    toast("识别结果来自本地缓存");
+    openPreview();
+    return;
+  }
+  /* 首次：才需要加载引擎并跑模型识别第一张 */
+  S.engineBusy = true;
+  showProc("正在识别预览图（仅第一张）…", 0);
+  await yieldUi();
+  let ok = false, err = "";
+  try { await initEngine(); ok = true; } catch (e) { err = (e && e.message) || String(e); }
+  if (!ok) {
+    S.engineBusy = false;
+    hideProc();
+    toast(engineFailText(err));
+    return;
+  }
+  try {
+    const r = await recognizePhoto(p, 0, 1);
+    showProc("识别完成，正在生成预览…", 100);
+  } catch (e) {
+    S.engineBusy = false;
+    hideProc();
+    toast("预览图识别失败：" + ((e && e.message) || e));
+    return;
+  }
+  S.engineBusy = false;
+  hideProc();
+  openPreview();
+}
+function openPreview() {
+  const p = S.photos[0];
+  if (!p || !p.recognized) { toast("请先点「预览效果」识别第一张图"); return; }
+  S.previewOn = true;
+  $("previewWrap").classList.remove("hidden");
+  renderPreview();
+  toast("预览已就绪，改设置会实时刷新");
+}
+function closePreview() {
+  S.previewOn = false;
+  $("previewWrap").classList.add("hidden");
+}
+/* 预览渲染：以第一张图为底，按当前全部设置（打码/关键词水印/普通水印/图片水印）重绘 */
+function renderPreview() {
+  const p = S.photos[0];
+  if (!p || !p.recognized) { closePreview(); return; }
+  const s0 = S.settings;
+  const mImg = s0.maskImgData || "";
+  const key = [s0.maskType, s0.mosaicSize, s0.maskBlur, s0.maskSolidColor, s0.maskSolidOpacity,
+    mImg.length, mImg.slice(0, 32)].join("|")
+    + "|" + p.boxes.map(b => Math.round(b.x) + "," + Math.round(b.y) + "," + Math.round(b.w) + "," + Math.round(b.h)).join(";");
+  /* 打码底图缓存：只有打码方式/参数或打码框变化时才重算 */
+  if (!p._prevBase || p._prevKey !== key) {
+    const base = document.createElement("canvas");
+    base.width = p.w; base.height = p.h;
+    const bg = base.getContext("2d");
+    bg.drawImage(p.img, 0, 0);
+    for (const b of p.boxes) { if (b.skip) continue; applyMaskWorld(bg, base, b.x, b.y, b.w, b.h); }
+    p._prevBase = base;
+    p._prevKey = key;
+  }
+  const wrap = $("previewCanvas");
+  const cw = Math.max(160, Math.min(520, Math.floor(wrap.parentElement.clientWidth)));
+  const ratio = cw / p.w;
+  const ch = Math.max(100, Math.floor(p.h * ratio));
+  wrap.width = cw; wrap.height = ch;
+  const g = wrap.getContext("2d");
+  g.imageSmoothingEnabled = true;
+  g.drawImage(p._prevBase, 0, 0, cw, ch);
+  /* 水印层：世界坐标绘制，通过 scale 自动换算到预览画布 */
+  g.save();
+  g.scale(ratio, ratio);
+  const s = S.settings;
+  if (s.kw && s.kw.wmEnabled && p.kwWmBoxes && p.kwWmBoxes.length) {
+    const kwT = s.kw.wmType === "image" ? "image" : "text";
+    const kwReady = kwT === "image" ? !!S.kwWmImgEl : !!((s.kw.wmText || "").trim());
+    if (kwReady) {
+      for (const b of p.kwWmBoxes) {
+        if (!kwWmBoxValid(b)) continue;
+        if (kwT === "image") drawKwImageWatermark(g, b, b.k, s.kw);
+        else drawKwTextWatermark(g, b, b.k, s.kw);
+      }
+    }
+  }
+  if (s.wm.enabled && s.wm.text.trim()) drawWatermarkWorld(g, p.w, p.h, s.wm);
+  if (s.wmImg.enabled && s.wmImg.data) drawImageWatermarkWorld(g, p.w, p.h, s.wmImg);
+  g.restore();
+}
+
+/* ================= 方案系统（可动态增删，名称可自定义） ================= */
+const SCHEME_KEY = "price-tool-schemes";
+const MAX_SCHEMES = 20;
+const DEFAULT_SCHEME_NAMES = ["方案一", "方案二", "方案三"];
+let schemeNames = DEFAULT_SCHEME_NAMES.slice();
+let schemes = [null, null, null];
+let curScheme = 0;
+function loadSchemes() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SCHEME_KEY));
+    if (saved) {
+      if (Array.isArray(saved.schemes)) {
+        schemes = saved.schemes.map(s => s || null);
+        if (Array.isArray(saved.names) && saved.names.length === schemes.length) {
+          schemeNames = saved.names.slice();
+        }
+      }
+      curScheme = (saved.cur >= 0 && saved.cur < schemes.length) ? saved.cur : 0;
+    }
+  } catch (e) {}
+  if (!schemes.length) { schemes = [null]; schemeNames = ["方案一"]; }
+}
+function saveSchemes() {
+  try { localStorage.setItem(SCHEME_KEY, JSON.stringify({ schemes, cur: curScheme, names: schemeNames })); } catch (e) {}
+}
+function applyScheme(i) {
+  curScheme = i;
+  S.settings = mergeSettings(schemes[i]);
+  saveSettings();
+  updateSettingsUI();
+  renderSchemeBtns();
+  saveSchemes();
+  toast("已切换到" + schemeNames[i]);
+}
+function saveCurrentScheme() {
+  schemes[curScheme] = JSON.parse(JSON.stringify(S.settings));
+  saveSchemes();
+  renderSchemeBtns();
+  toast("已保存到" + schemeNames[curScheme]);
+}
+function renderSchemeBtns() {
+  const wrap = $("schemeBtns");
+  wrap.innerHTML = "";
+  schemes.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.className = "btn sec" + (i === curScheme ? " on" : "");
+    b.textContent = schemeNames[i] + (s ? " ✓" : "");
+    b.onclick = () => applyScheme(i);
+    wrap.appendChild(b);
+  });
+}
+function addScheme() {
+  if (schemes.length >= MAX_SCHEMES) { toast("方案最多 " + MAX_SCHEMES + " 个"); return; }
+  schemes.push(null);
+  schemeNames.push("方案" + (schemes.length));
+  renderSchemeBtns();
+  saveSchemes();
+  toast("已新增方案" + schemeNames[schemes.length - 1]);
+}
+function deleteScheme() {
+  if (schemes.length <= 1) { toast("至少保留一个方案"); return; }
+  schemes.splice(curScheme, 1);
+  schemeNames.splice(curScheme, 1);
+  if (curScheme >= schemes.length) curScheme = schemes.length - 1;
+  saveSchemes();
+  renderSchemeBtns();
+  toast("已删除方案");
+}
+function openRename() {
+  const wrap = $("renameRows");
+  wrap.innerHTML = "";
+  schemes.forEach((s, i) => {
+    const row = document.createElement("div");
+    row.className = "set";
+    const lb = document.createElement("label");
+    lb.textContent = "方案 " + (i + 1);
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.maxLength = 12;
+    inp.id = "rename" + i;
+    inp.value = schemeNames[i];
+    row.appendChild(lb); row.appendChild(inp);
+    wrap.appendChild(row);
+  });
+  $("renameModal").classList.remove("hidden");
+}
+function closeRename() { $("renameModal").classList.add("hidden"); }
+function saveRename() {
+  for (let i = 0; i < schemes.length; i++) {
+    const el = document.getElementById("rename" + i);
+    if (!el) continue;
+    const v = el.value.trim();
+    if (v) schemeNames[i] = v;
+  }
+  saveSchemes();
+  renderSchemeBtns();
+  closeRename();
+  toast("方案名称已更新");
+}
+/* 复制当前方案的设置到其他方案 */
+function openCopy() {
+  $("copyDesc").textContent = "把「" + schemeNames[curScheme] + "」的设置复制到（已有内容将被覆盖）：";
+  const wrap = $("copyTargets");
+  wrap.innerHTML = "";
+  schemes.forEach((s, i) => {
+    if (i === curScheme) return;
+    const row = document.createElement("div");
+    row.className = "kw-row";
+    row.dataset.idx = i;
+    const chk = document.createElement("input");
+    chk.type = "checkbox"; chk.checked = true;
+    const nm = document.createElement("span");
+    nm.className = "kw-txt";
+    nm.textContent = schemeNames[i] + (s ? "（已有内容）" : "");
+    row.appendChild(chk); row.appendChild(nm);
+    wrap.appendChild(row);
+  });
+  $("copyModal").classList.remove("hidden");
+}
+function closeCopy() { $("copyModal").classList.add("hidden"); }
+function confirmCopy() {
+  const source = JSON.parse(JSON.stringify(S.settings));
+  let n = 0;
+  document.querySelectorAll("#copyTargets .kw-row").forEach(row => {
+    if (!row.querySelector("input").checked) return;
+    schemes[+row.dataset.idx] = JSON.parse(JSON.stringify(source));
+    n++;
+  });
+  if (!n) { closeCopy(); return; }
+  saveSchemes();
+  renderSchemeBtns();
+  closeCopy();
+  toast("已复制到 " + n + " 个方案");
+}
+/* 导出当前全部设置（含方案），便于换机迁移或设为默认 */
+/* mode: "lite"=仅文字设置（不含图片，文本小）；"full"=完整备份（含三张图片 dataURL） */
+function stripImgs(s) {
+  if (!s) return s;
+  if (s.wmImg) s.wmImg.data = "";
+  if (s.kw) s.kw.wmImgData = "";
+  s.maskImgData = "";
+  return s;
+}
+function buildExportData(mode) {
+  if (mode !== "lite") {
+    return { settings: S.settings, schemes, curScheme, schemeNames, exportMode: mode };
+  }
+  /* 仅设置：当前方案 + 其他所有方案里的图片 dataURL 全部清空 */
+  const settings = stripImgs(JSON.parse(JSON.stringify(S.settings)));
+  const s2 = JSON.parse(JSON.stringify(schemes)).map(stripImgs);
+  return { settings, schemes: s2, curScheme, schemeNames, exportMode: mode };
+}
+function refreshExportText() {
+  $("exportText").value = JSON.stringify(buildExportData($("exportMode").value));
+}
+function openExport() {
+  refreshExportText();
+  $("exportModal").classList.remove("hidden");
+}
+function closeExport() { $("exportModal").classList.add("hidden"); }
+/* 把导出内容存成 .json 文件下载：手机上复制超长文本困难，下载文件后直接发文件即可 */
+function downloadExport() {
+  const mode = $("exportMode").value;
+  const text = JSON.stringify(buildExportData(mode));
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (mode === "lite" ? "价格打码设置" : "价格打码完整备份") + "_v" + (window.TOOL_VER || "") + ".json";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+  toast("文件已生成，请把文件发给我");
+}
+function copyExport() {
+  const t = $("exportText");
+  t.focus(); t.select();
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t.value).then(() => toast("已复制，请粘贴发给我"))
+        .catch(() => { try { document.execCommand("copy"); toast("已复制，请粘贴发给我"); } catch (e) { toast("请长按文本手动复制"); } });
+    } else {
+      document.execCommand("copy");
+      toast("已复制，请粘贴发给我");
+    }
+  } catch (e) { toast("请长按文本手动复制"); }
+}
+/* 恢复设置里保存的三张图片（图片水印/关键词水印图/打码素材） */
+function loadImageEls() {
+  /* 恢复已保存的图片水印 */
+  if (S.settings.wmImg && S.settings.wmImg.data) {
+    const img = new Image();
+    img.onload = () => { S.wmImgEl = img; updateWmImgPreview(); };
+    img.src = S.settings.wmImg.data;
+  }
+  /* 恢复已保存的关键词水印独立图片 */
+  if (S.settings.kw && S.settings.kw.wmImgData) {
+    const img = new Image();
+    img.onload = () => { S.kwWmImgEl = img; updateKwWmImgPreview(); };
+    img.src = S.settings.kw.wmImgData;
+  }
+  /* 恢复已保存的打码素材图 */
+  if (S.settings.maskImgData) {
+    const img = new Image();
+    img.onload = () => { S.maskImgEl = img; updateMaskImgPreview(); };
+    img.src = S.settings.maskImgData;
+  }
+}
+/* 导入设置：换浏览器/换手机后粘贴导出内容恢复 */
+function openImport() {
+  $("importText").value = "";
+  $("importModal").classList.remove("hidden");
+}
+function closeImport() { $("importModal").classList.add("hidden"); }
+/* 读取用户选择的 .json 导出文件并导入（免复制粘贴） */
+function importFromFile() {
+  const inp = $("importFileInput");
+  const f = inp.files && inp.files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { $("importText").value = rd.result; doImport(); inp.value = ""; };
+  rd.onerror = () => toast("文件读取失败");
+  rd.readAsText(f, "utf-8");
+}
+function doImport() {
+  const raw = ($("importText").value || "").trim();
+  if (!raw) { toast("请先粘贴导出的内容"); return; }
+  let data;
+  try { data = JSON.parse(raw); } catch (e) { toast("内容不是有效的导出数据"); return; }
+  if (!data || typeof data !== "object" || !data.settings) { toast("格式不对，请粘贴「⬇ 导出」复制的内容"); return; }
+  try {
+    const ds = data.settings || {};
+    const hasImg = !!(ds.wmImg && ds.wmImg.data) || !!(ds.kw && ds.kw.wmImgData) || !!ds.maskImgData;
+    S.settings = mergeSettings(ds);
+    if (!hasImg) {
+      /* 轻量导出不含图片：清掉本地残留图片，避免误用旧图 */
+      if (S.settings.wmImg) S.settings.wmImg.data = "";
+      if (S.settings.kw) S.settings.kw.wmImgData = "";
+      S.settings.maskImgData = "";
+      S.wmImgEl = null; S.kwWmImgEl = null; S.maskImgEl = null;
+    }
+    if (Array.isArray(data.schemes)) {
+      schemes = data.schemes.map(s => s || null);
+      if (schemes.length) {
+        if (Array.isArray(data.schemeNames) && data.schemeNames.length === schemes.length) schemeNames = data.schemeNames.slice();
+        else if (schemeNames.length !== schemes.length) schemeNames = schemes.map((s, i) => "方案" + (i + 1));
+      }
+    }
+    if (typeof data.curScheme === "number" && data.curScheme >= 0 && data.curScheme < schemes.length) curScheme = data.curScheme;
+    saveSettings();
+    saveSchemes();
+    loadImageEls();
+    updateSettingsUI();
+    renderSchemeBtns();
+    toast(hasImg ? "导入成功，设置已恢复（含图片）" : "导入成功。图片水印/关键词水印图/打码素材需重新上传");
+    closeImport();
+  } catch (e) {
+    toast("导入失败：" + ((e && e.message) || e));
+  }
+}
+
+/* ================= 输出渲染与保存 ================= */
+function renderOutput(p) {
+  const out = document.createElement("canvas");
+  out.width = p.w; out.height = p.h;
+  const g = out.getContext("2d");
+  g.drawImage(p.img, 0, 0);
+  for (const b of p.boxes) {
+    if (b.skip) continue;
+    applyMaskWorld(g, out, b.x, b.y, b.w, b.h);
+  }
+  /* 识别文字位置打水印：位置=全部识别文字/连续数字串，水印类型在下方折叠面板选 */
+  const wmo = S.settings.wmOcr;
+  const kw = S.settings.kw;
+  if (p.ocrWords && p.ocrWords.length) {
+    /* 关键词水印：用识别时生成的水印框（微调页可拖动微调位置） */
+    if (kw && kw.wmEnabled) {
+      const kwType = kw.wmType === "image" ? "image" : "text";
+      const kwReady = kwType === "image" ? !!kw.wmImgData : !!((kw.wmText || "").trim());
+      if (kwReady && p.kwWmBoxes && p.kwWmBoxes.length) {
+        for (const b of p.kwWmBoxes) {
+          if (!kwWmBoxValid(b)) continue;
+          if (kwType === "image") drawKwImageWatermark(g, b, b.k, kw);
+          else drawKwTextWatermark(g, b, b.k, kw);
+        }
+      }
+    }
+    /* 识别文字位置打水印：全部识别文字 / 连续数字串（订单号） */
+    if (wmo && wmo.enabled) {
+      const wmType = (wmo.type === "image" && S.settings.wmImg.data) ? "image" : "text";
+      const wmReady = wmType === "image" || !!S.settings.wm.text.trim();
+      if (wmReady) {
+        for (const ln of p.ocrWords) {
+          const digits = (ln.text || "").replace(/[^0-9]/g, "");
+          const hit = wmo.allText || (wmo.orderNo && digits.length >= wmo.minLen);
+          if (!hit) continue;
+          drawBoxWm(g, ln, wmType);
+        }
+      }
+    }
+  }
+  if (S.settings.wm.enabled && S.settings.wm.text.trim()) {
+    drawWatermarkWorld(g, p.w, p.h, S.settings.wm);
+  }
+  if (S.settings.wmImg.enabled && S.settings.wmImg.data) {
+    drawImageWatermarkWorld(g, p.w, p.h, S.settings.wmImg);
+  }
+  return out;
+}
+/* 关键词水印独立位置偏移：默认盖在关键词正中；方向 top/bottom/left/right 按框尺寸的百分比偏离 */
+function kwWmOffset(k, box) {
+  let dx = 0, dy = 0;
+  if (!k) return { dx, dy };
+  const dir = k.wmPosDir || "center";
+  const d = (k.wmPosDist != null ? k.wmPosDist : 0) / 100;
+  if (dir === "top") dy = -box.h * d;
+  else if (dir === "bottom") dy = box.h * d;
+  else if (dir === "left") dx = -box.w * d;
+  else if (dir === "right") dx = box.w * d;
+  return { dx, dy };
+}
+/* 关键词水印框是否仍有效：对应关键词还在列表里且水印开关开着 */
+function kwWmBoxValid(b) {
+  const k = b.k;
+  return !!k && k.wm && S.settings.kw.list.indexOf(k) >= 0;
+}
+/* 关键词水印：文字版——字号=框高×百分比，颜色/透明度用关键词水印自己的设置 */
+function drawKwTextWatermark(g, box, k, gkw) {
+  const base = (gkw.wmText || "").trim();
+  if (!base || box.w < 8 || box.h < 8) return;
+  const wmSize = k && k.wmSize != null ? k.wmSize : (gkw.wmSize != null ? gkw.wmSize : 60);
+  const fs = Math.max(8, box.h * wmSize / 100);
+  g.font = "bold " + fs + "px sans-serif";
+  const oneW = Math.max(1, g.measureText(base + "  ").width);
+  const cnt = Math.max(1, Math.floor((box.w * 0.9) / oneW));
+  const label = cnt > 1 ? new Array(cnt).fill(base).join("  ") : base;
+  g.save();
+  g.globalAlpha = gkw.wmOpacity != null ? gkw.wmOpacity : 0.8;
+  g.fillStyle = gkw.wmColor || "#ffffff";
+  g.font = "bold " + fs + "px sans-serif";
+  g.textAlign = "center"; g.textBaseline = "middle";
+  const off = kwWmOffset(k, box);
+  g.translate(box.x + box.w / 2 + off.dx, box.y + box.h / 2 + off.dy);
+  if (gkw.wmAngle) g.rotate(gkw.wmAngle * Math.PI / 180);
+  g.fillText(label, 0, 0);
+  g.restore();
+}
+/* 关键词水印：图片版——用关键词水印自己上传的图片，等比缩放至框的百分比大小，居中 */
+function drawKwImageWatermark(g, box, k, gkw) {
+  const img = S.kwWmImgEl;
+  if (!img || box.w < 8 || box.h < 8) return;
+  const wmSize = k && k.wmSize != null ? k.wmSize : (gkw.wmImgSize != null ? gkw.wmImgSize : 80);
+  const pct = wmSize / 100;
+  const maxW = box.w * pct, maxH = box.h * pct;
+  const r = Math.min(maxW / img.width, maxH / img.height);
+  const dw = img.width * r, dh = img.height * r;
+  g.save();
+  g.globalAlpha = gkw.wmImgOpacity != null ? gkw.wmImgOpacity : 0.8;
+  const off = kwWmOffset(k, box);
+  g.translate(box.x + box.w / 2 + off.dx, box.y + box.h / 2 + off.dy);
+  if (gkw.wmAngle) g.rotate(gkw.wmAngle * Math.PI / 180);
+  g.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+  g.restore();
+}
+/* 按水印类型在框内盖水印（文字或图片）——「识别文字位置打水印」使用 */
+function drawBoxWm(g, box, type) {
+  if (type === "image") drawBoxImageWatermark(g, box);
+  else drawBoxWatermark(g, box, S.settings.wm);
+}
+/* 在指定框内盖图片水印：按框大小等比缩放并居中 */
+function drawBoxImageWatermark(g, box) {
+  const img = S.wmImgEl;
+  if (!img || box.w < 8 || box.h < 8) return;
+  const r = Math.min(box.w / img.width, box.h / img.height);
+  const dw = img.width * r, dh = img.height * r;
+  g.save();
+  g.globalAlpha = S.settings.wmImg.opacity;
+  g.drawImage(img, box.x + (box.w - dw) / 2, box.y + (box.h - dh) / 2, dw, dh);
+  g.restore();
+}
+/* 在指定文字框内盖水印文字：文字自动重复铺满整行，字号按框高自适应 */
+function drawBoxWatermark(g, ln, wm) {
+  if (ln.w < 8 || ln.h < 8) return;
+  const base = wm.text;
+  const fs = Math.max(10, Math.min(ln.h * 0.75, (ln.w * 1.6) / (base.length + 1)));
+  g.font = "bold " + fs + "px sans-serif";
+  const oneW = Math.max(1, g.measureText(base + "  ").width);
+  const cnt = Math.max(1, Math.floor((ln.w * 0.9) / oneW));
+  const label = cnt > 1 ? new Array(cnt).fill(base).join("  ") : base;
+  g.save();
+  g.globalAlpha = wm.opacity;
+  g.fillStyle = wm.color;
+  g.font = "bold " + fs + "px sans-serif";
+  g.textAlign = "center"; g.textBaseline = "middle";
+  g.translate(ln.x + ln.w / 2, ln.y + ln.h / 2);
+  if (wm.angle) g.rotate(wm.angle * Math.PI / 180);
+  g.fillText(label, 0, 0);
+  g.restore();
+}
+function mosaicWorld(g, src, x, y, w, h, bs) {
+  x = Math.max(0, Math.floor(x)); y = Math.max(0, Math.floor(y));
+  w = Math.min(w, src.width - x); h = Math.min(h, src.height - y);
+  if (w <= 0 || h <= 0) return;
+  g.save();
+  g.beginPath();
+  g.rect(x, y, w, h);
+  g.clip();
+  g.imageSmoothingEnabled = false;
+  const cols = Math.max(1, Math.round(w / bs));
+  const rows = Math.max(1, Math.round(h / bs));
+  g.drawImage(src, x, y, w, h, x, y, cols, rows);
+  g.drawImage(g.canvas, x, y, cols, rows, x, y, w, h);
+  g.restore();
+}
+/* 打码渲染（世界坐标版，输出图/预览底图共用）：blur=高斯模糊 / solid=纯色块 / img=图片素材 / mosaic=马赛克 */
+function applyMaskWorld(g, src, x, y, w, h) {
+  const s = S.settings;
+  const t = s.maskType || "mosaic";
+  if (t === "blur" && FILTER_OK) {
+    const r = Math.max(1, s.maskBlur != null ? s.maskBlur : 12);
+    try {
+      g.save();
+      g.filter = "blur(" + r + "px)";
+      g.beginPath();
+      g.rect(x, y, w, h);
+      g.clip();
+      g.drawImage(src, x, y, w, h, x, y, w, h);
+      g.restore();
+      return;
+    } catch (e) { try { g.restore(); } catch (e2) {} }
+  }
+  if (t === "solid") {
+    g.save();
+    g.globalAlpha = s.maskSolidOpacity != null ? s.maskSolidOpacity : 1;
+    g.fillStyle = s.maskSolidColor || "#000000";
+    g.fillRect(x, y, w, h);
+    g.restore();
+    return;
+  }
+  if (t === "img" && S.maskImgEl) {
+    const img = S.maskImgEl;
+    /* 要多大就裁多大：按打码框的真实大小从素材里裁一块，放大框=裁更大的区域 */
+    let cw = w, ch = h;
+    if (cw > img.width || ch > img.height) {   // 素材不够大时整体拉伸（保持框的比例）
+      const sc = Math.max(cw / img.width, ch / img.height);
+      cw = Math.round(cw / sc); ch = Math.round(ch / sc);
+    }
+    g.save();
+    g.beginPath();
+    g.rect(x, y, w, h);
+    g.clip();
+    g.drawImage(img, (img.width - cw) / 2, (img.height - ch) / 2, cw, ch, x, y, w, h);
+    g.restore();
+    return;
+  }
+  mosaicWorld(g, src, x, y, w, h, s.mosaicSize);
+}
+function outName(p) {
+  const base = (p.name || "photo").replace(/\.[^.]+$/, "");
+  return base + "_打码水印.png";
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+/* ================= ZIP 打包（store 不压缩，PNG 本身已压缩）================= */
+/* 手机浏览器限制连续逐张下载（如 vivo 每 1 分钟约 3 次），张数多时打包成一个 zip 只下载一次，绕开限制 */
+function crc32(u8) {
+  let c = ~0;
+  for (let i = 0; i < u8.length; i++) {
+    c ^= u8[i];
+    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xEDB88320 & -(c & 1));
+  }
+  return (~c) >>> 0;
+}
+function zipMake(files) {   // files: [{name, data(Uint8Array)}] -> Blob(zip)
+  const enc = new TextEncoder();
+  const chunks = [], central = [];
+  let offset = 0;
+  const d = new Date();
+  const dosTime = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const dosDate = (((d.getFullYear() - 1980) & 0x7F) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const f of files) {
+    const nameU8 = enc.encode(f.name);
+    const crc = crc32(f.data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true);
+    lh.setUint16(4, 20, true); lh.setUint16(6, 0, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, dosTime, true); lh.setUint16(12, dosDate, true);
+    lh.setUint32(14, crc, true);
+    lh.setUint32(18, f.data.length, true); lh.setUint32(22, f.data.length, true);
+    lh.setUint16(26, nameU8.length, true); lh.setUint16(28, 0, true);
+    chunks.push(lh.buffer, nameU8.buffer, f.data.buffer);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true);
+    ch.setUint16(4, 20, true); ch.setUint16(6, 20, true);
+    ch.setUint16(8, 0, true); ch.setUint16(10, 0, true);
+    ch.setUint16(12, dosTime, true); ch.setUint16(14, dosDate, true);
+    ch.setUint32(16, crc, true);
+    ch.setUint32(20, f.data.length, true); ch.setUint32(24, f.data.length, true);
+    ch.setUint16(28, nameU8.length, true); ch.setUint16(30, 0, true);
+    ch.setUint16(32, 0, true); ch.setUint16(34, 0, true);
+    ch.setUint16(36, 0, true); ch.setUint32(38, 0, true);
+    ch.setUint32(42, offset, true);
+    central.push(ch.buffer, nameU8.buffer);
+    offset += 30 + nameU8.length + f.data.length;
+  }
+  const cdSize = central.reduce((s, c) => s + c.byteLength, 0);
+  const eo = new DataView(new ArrayBuffer(22));
+  eo.setUint32(0, 0x06054b50, true);
+  eo.setUint16(4, 0, true); eo.setUint16(6, 0, true);
+  eo.setUint16(8, files.length, true); eo.setUint16(10, files.length, true);
+  eo.setUint32(12, cdSize, true); eo.setUint32(16, offset, true);
+  eo.setUint16(20, 0, true);
+  return new Blob([...chunks, ...central, eo], { type: "application/zip" });
+}
+function saveAllZip(list) {
+  const n = list.length;
+  openSaveModal();
+  setSaveBtn("正在打包…", true);
+  updateSaveProgress(0, n, "正在生成 " + n + " 张图片，请稍候…");
+  (async () => {
+    try {
+      const files = [];
+      for (let i = 0; i < n; i++) {
+        const p = list[i];
+        updateSaveProgress(i, n, "正在处理 " + (i + 1) + "/" + n + "：" + p.name);
+        await yieldUi();
+        const blob = await canvasToBlob(renderOutput(p));
+        files.push({ name: outName(p), data: new Uint8Array(await blob.arrayBuffer()) });
+      }
+      updateSaveProgress(n, n, "正在打包成压缩包…");
+      await yieldUi();
+      const zip = zipMake(files);
+      downloadBlob(zip, "打码图片_" + n + "张.zip");
+      updateSaveProgress(n, n, "已下载压缩包（含 " + n + " 张图）。浏览器限制逐张下载，打包可一次全拿到。");
+      setSaveBtn("完成", false, closeSaveModal);
+      saveCtx = null;
+    } catch (e) {
+      updateSaveProgress(0, n, "保存出错：" + ((e && e.message) || e));
+      setSaveBtn("完成", false, closeSaveModal);
+      saveCtx = null;
+    }
+  })();
+}
+/* 保存进度弹窗 */
+function openSaveModal() {
+  $("saveModal").classList.remove("hidden");
+  setSaveBtn("正在保存…", true);
+  $("saveBar").style.width = "0%";
+}
+function updateSaveProgress(done, total, text) {
+  $("saveBar").style.width = (total ? Math.round(done / total * 100) : 0) + "%";
+  $("saveText").textContent = text;
+}
+function setSaveBtn(text, disabled, onclick) {
+  const b = $("saveNextBtn");
+  b.textContent = text;
+  b.disabled = !!disabled;
+  b.onclick = onclick || null;
+}
+function closeSaveModal() { $("saveModal").classList.add("hidden"); }
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+/* 保存：自动分批逐张下载（每批 3 张，浏览器通常只放行 3 个连续下载）。
+   每批内自动一张接一张，批与批之间由用户点「继续」触发，保证每次都放行；PNG 直接进相册/下载 */
+let saveCtx = null;
+async function savePhotos(list) {
+  const photos = list.filter(Boolean);
+  if (!photos.length) { toast("请先选择照片"); return; }
+  saveCtx = { photos, i: 0, n: photos.length };
+  openSaveModal();
+  await runSaveBatch();
+}
+async function runSaveBatch() {
+  const ctx = saveCtx;
+  if (!ctx) return;
+  const { photos, n } = ctx;
+  const batch = Math.min(6, Math.max(1, S.settings.saveBatch || 3));   // 每批张数可在设置里调
+  updateSaveProgress(ctx.i, n, "准备中…");
+  await yieldUi();
+  try {
+    const batchEnd = Math.min(ctx.i + batch, n);
+    for (; ctx.i < batchEnd; ctx.i++) {
+      const p = photos[ctx.i];
+      updateSaveProgress(ctx.i, n, "正在处理 " + (ctx.i + 1) + "/" + n + "：" + p.name);
+      await yieldUi();
+      const blob = await canvasToBlob(renderOutput(p));
+      downloadBlob(blob, outName(p));
+      updateSaveProgress(ctx.i + 1, n, "第 " + (ctx.i + 1) + "/" + n + " 张已保存" + (ctx.i + 1 < batchEnd ? "，准备下一张…" : ""));
+      await yieldUi();
+      if (ctx.i + 1 < batchEnd) await sleep(900);   // 批内间隔，逐个放行
+    }
+    if (ctx.i >= n) {
+      updateSaveProgress(n, n, "全部保存完成：共 " + n + " 张");
+      setSaveBtn("完成", false, closeSaveModal);
+      saveCtx = null;
+    } else {
+      const left = n - ctx.i;
+      updateSaveProgress(ctx.i, n, "已保存 " + ctx.i + "/" + n + " 张。浏览器限制连续下载，点「继续」自动保存下一批（" + Math.min(batch, left) + " 张）");
+      setSaveBtn("继续保存", false, () => { setSaveBtn("正在保存…", true); runSaveBatch(); });
+    }
+  } catch (e) {
+    updateSaveProgress(0, n, "保存出错：" + ((e && e.message) || e));
+    setSaveBtn("完成", false, closeSaveModal);
+    saveCtx = null;
+  }
+}
+function saveAll() {
+  const list = S.photos.filter(Boolean);
+  if (!list.length) { toast("请先选择照片"); return; }
+  /* 3 张及以下逐张下载直接进相册；超过 3 张打包成 zip 一次下载（vivo 等浏览器限制连续逐张下载） */
+  if (list.length > 3) saveAllZip(list);
+  else savePhotos(list);
+}
+function canvasToBlob(c) {
+  return new Promise((resolve) => c.toBlob(resolve, "image/png"));
+}
+
+/* ================= 事件绑定 ================= */
+function bindUI() {
+  $("btnPick").onclick = () => $("fileInput").click();
+  $("btnCamera").onclick = () => $("cameraInput").click();
+  $("fileInput").onchange = (e) => { addPhotos(e.target.files); e.target.value = ""; };
+  $("cameraInput").onchange = (e) => { addPhotos(e.target.files); e.target.value = ""; };
+
+  $("back1").onclick = () => { if (!S.engineBusy) setStep(1); };
+  $("btnRun").onclick = () => runRecognition(false);
+  $("back2").onclick = () => setStep(1);
+  $("btnRerun").onclick = rerunCurrent;
+
+  $("btnAddBox").onclick = () => {
+    S.addMode = !S.addMode;
+    $("btnAddBox").textContent = S.addMode ? "✓ 拖动中，框好后自动关闭" : "＋ 手动加框";
+  };
+  $("btnOcrOverlay").onclick = () => {
+    S.ocrMode = !S.ocrMode;
+    S.addMode = false;
+    $("btnAddBox").textContent = "＋ 手动加框";
+    $("btnOcrOverlay").textContent = S.ocrMode ? "✓ 关闭识别文字" : "🔤 识别文字";
+    draw();
+  };
+  $("ocrClose").onclick = closeOcrText;
+  $("delFloat").onclick = () => {
+    if (S.sel >= 0) {
+      const p = curPhoto();
+      p.boxes.splice(S.sel, 1);
+      S.sel = -1;
+      syncUI(); draw();
+    }
+  };
+  document.querySelectorAll("#zoomBtns button").forEach(b => {
+    b.onclick = () => {
+      const p = curPhoto(); if (!p) return;
+      const wrap = $("canvasWrap");
+      const fit = wrap.clientWidth / p.w;
+      if (b.dataset.zoom === "fit") { S.zoom = { scale: fit, ox: 0, oy: 0 }; }
+      else if (b.dataset.zoom === "in") { zoomAt(1.5); }
+      else { zoomAt(1 / 1.5); }
+      draw();
+    };
+  });
+
+  $("btnAddScheme").onclick = addScheme;
+  $("btnDelScheme").onclick = deleteScheme;
+  $("btnSaveScheme").onclick = saveCurrentScheme;
+  $("btnRenameScheme").onclick = openRename;
+  $("btnRenameCancel").onclick = closeRename;
+  $("btnRenameOk").onclick = saveRename;
+  $("btnCopyScheme").onclick = openCopy;
+  $("btnCopyCancel").onclick = closeCopy;
+  $("btnCopyOk").onclick = confirmCopy;
+  $("btnExport").onclick = openExport;
+  $("btnExportClose").onclick = closeExport;
+  $("btnExportCopy").onclick = copyExport;
+  $("btnExportFile").onclick = downloadExport;
+  $("exportMode").onchange = refreshExportText;
+  $("btnImport").onclick = openImport;
+  $("btnImportCancel").onclick = closeImport;
+  $("btnImportOk").onclick = doImport;
+  $("btnImportFile").onclick = () => $("importFileInput").click();
+  $("importFileInput").onchange = importFromFile;
+  $("btnSaveAll").onclick = saveAll;
+  $("btnSaveEdit").onclick = () => savePhotos([curPhoto()]);
+}
+function zoomAt(factor) {
+  const p = curPhoto(); if (!p) return;
+  const wrap = $("canvasWrap");
+  const fit = wrap.clientWidth / p.w;
+  const cx = wrap.clientWidth / 2, cy = wrap.clientHeight / 2;
+  const w = screenToWorld(cx, cy);
+  S.zoom.scale = clamp(S.zoom.scale * factor, fit * 0.25, fit * 12);
+  S.zoom.ox = cx - w.x * S.zoom.scale;
+  S.zoom.oy = cy - w.y * S.zoom.scale;
+}
+/* 识别并打码主流程：force=true 时对全部照片重新识别（设置可能已改） */
+async function runRecognition(force) {
+  if (S.engineBusy) return;
+  if (!S.photos.length) { toast("请先选择照片"); return; }
+  S.engineBusy = true;   // 立即占用：防止引擎加载期间重复点击并发执行
+  $("btnRun").disabled = true;
+  setStep(2);
+  $("back1").disabled = true;
+  $("progressWrap").classList.remove("hidden");
+  $("progressBar").style.width = "0%";
+  $("progressText").textContent = "正在加载识别引擎…";
+  $("recognizeResult").innerHTML = "";
+  showProc("正在加载识别引擎…", 0);   // 点击后立即弹出全屏遮罩，给出即时反馈
+  await yieldUi();   // 先让遮罩与步骤2界面绘制出来，避免点击后无反馈
+  let engineOk = false, engineErr = "";
+  try {
+    await initEngine();
+    engineOk = true;
+  } catch (e) {
+    engineErr = (e && e.message) || String(e);
+  }
+  if (!engineOk) {
+    S.engineBusy = false;
+    $("btnRun").disabled = false;
+    $("back1").disabled = false;
+    hideProc();
+    setStep(1);
+    toast(engineFailText(engineErr));
+    return;
+  }
+  if (force) {
+    S.photos.forEach(p => { p.recognized = false; p.boxes = []; p.kwWmBoxes = []; });
+  } else {
+    /* 已识别的照片（如预览过的那张）只按当前设置重建标记，秒级，不重跑模型 */
+    S.photos.forEach(p => { if (p.recognized) buildBoxes(p); });
+  }
+  /* 先尝试识别结果缓存：同一张图曾识别过就直接复用文字结果，跳过模型 */
+  for (const p of S.photos) {
+    if (p.recognized) continue;
+    try { await applyCachedOcr(p); } catch (e) {}
+  }
+  const photos = S.photos.filter(p => !p.recognized);
+  if (!photos.length) {
+    S.engineBusy = false;
+    $("btnRun").disabled = false;
+    $("back1").disabled = false;
+    hideProc();
+    closePreview();
+    setStep(3);
+    syncBoxList();
+    return;
+  }
+  const total = photos.length;
+  let done = 0;
+  for (const p of photos) {
+    /* 每张照片开始前先更新状态并让出主线程，让遮罩文字/进度实时刷新 */
+    updateProc(`正在识别 ${done + 1}/${total}：${p.name}`, (done / total) * 100);
+    await yieldUi();
+    try {
+      const r = await recognizePhoto(p, done, total);
+      done++;
+      $("progressBar").style.width = ((done / total) * 100) + "%";
+      updateProc(`已识别 ${done}/${total}，正在处理剩余照片…`, (done / total) * 100);
+      const line = document.createElement("p");
+      line.className = "loading-msg";
+      line.textContent = "✓ " + p.name + "：识别到 " + r.boxes.length + " 处待打码内容（" + (r.ms / 1000).toFixed(1) + " 秒）";
+      const btn = document.createElement("button");
+      btn.className = "mini-btn";
+      btn.textContent = "📄 识别文字";
+      btn.onclick = () => showOcrText(p);
+      line.appendChild(btn);
+      $("recognizeResult").appendChild(line);
+    } catch (err) {
+      const line = document.createElement("p");
+      line.className = "loading-msg";
+      line.style.color = "#dc2626";
+      line.textContent = "✗ " + p.name + "：识别失败（" + (err.message || err) + "）";
+      $("recognizeResult").appendChild(line);
+      done++;
+    }
+  }
+  $("progressBar").style.width = "100%";
+  $("progressText").textContent = "识别完成，共处理 " + done + " 张";
+  hideProc();
+  S.engineBusy = false;
+  $("btnRun").disabled = false;
+  $("back1").disabled = false;
+  closePreview();
+  setStep(3);
+  syncBoxList();
+  toast("识别打码完成，已进入微调保存");
+}
+/* 步骤3 内：「重新标记」——文字已缓存的照片只重算框（秒级）；从未识别的照片才跑模型 */
+async function rerunCurrent() {
+  const p = curPhoto();
+  if (!p) { toast("请先选择照片"); return; }
+  if (S.engineBusy) return;
+  if (p.ocrWords) {
+    buildBoxes(p);
+    S.boxes = p.boxes;
+    resetCanvas();
+    syncBoxList();
+    toast("已按当前设置重新标记");
+    return;
+  }
+  if (await applyCachedOcr(p)) {
+    S.boxes = p.boxes;
+    resetCanvas();
+    syncBoxList();
+    toast("识别结果来自本地缓存");
+    return;
+  }
+  S.engineBusy = true;
+  $("btnRerun").disabled = true;
+  showProc("正在准备识别引擎…", 0);
+  await yieldUi();
+  try {
+    await initEngine();
+  } catch (e) {
+    hideProc();
+    S.engineBusy = false;
+    $("btnRerun").disabled = false;
+    toast(engineFailText(e));
+    return;
+  }
+  updateProc(`正在识别：${p.name}`, 0);
+  await yieldUi();
+  let okMsg = "";
+  try {
+    const r = await recognizePhoto(p, 0, 1);
+    p.recognized = true;
+    S.boxes = p.boxes;
+    resetCanvas();
+    syncBoxList();
+    okMsg = "识别完成，共 " + r.boxes.length + " 处待打码内容";
+  } catch (err) {
+    okMsg = "识别失败：" + ((err && err.message) || err);
+  }
+  hideProc();
+  S.engineBusy = false;
+  $("btnRerun").disabled = false;
+  toast(okMsg);
+}
+
+/* ================= 启动 ================= */
+const verEl = $("verText");
+if (verEl) verEl.textContent = TOOL_VER;
+S.settings = loadSettings();
+loadSchemes();
+loadImageEls();   // 恢复设置里保存的图片水印/关键词水印图/打码素材
+bindUI();
+bindSettings();
+buildPosButtons();
+renderSchemeBtns();
+updateSettingsUI();
+setStep(1);
+try { localStorage.removeItem("price-tool-templates"); } catch (e) {}   // 清理旧版模板残留
+window.addEventListener("resize", () => { if (S.step === 3) resetCanvas(); });
+/* 注：不自动预载引擎——部分手机浏览器（如 vivo 自带）在页面刚打开时承受不了模型解码，会崩溃。改为点「开始识别」时加载，配合模型缓存，第二次打开依然很快。 */
+
+/* 自检模式：URL 带 ?selftest=1 时自动验证引擎与 OCR（诊断用） */
+if (new URLSearchParams(location.search).get("selftest") === "1") {
+  (async () => {
+    try {
+      await initEngine();
+      const c = document.createElement("canvas");
+      c.width = 900; c.height = 240;
+      const g = c.getContext("2d");
+      g.fillStyle = "#ffffff"; g.fillRect(0, 0, 900, 240);
+      g.fillStyle = "#111111"; g.font = "bold 96px sans-serif";
+      g.textAlign = "left"; g.textBaseline = "middle";
+      g.fillText("¥16.78", 50, 120);
+      const lines = await paddleOcr(c, 900, 240);
+      const text = lines.map(l => l.text).join(" ");
+      const ok = /16\.78/.test(text);
+      setEngineStatus(ok ? "ready" : "err", ok ? ("SELFTEST_OK:" + text) : ("SELFTEST_LOW:" + text));
+    } catch (e) {
+      setEngineStatus("err", "SELFTEST_FAIL:" + (e && e.message ? e.message : e));
+    }
+  })();
+}
+</script>
+</body>
+</html>

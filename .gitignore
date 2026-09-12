@@ -1,0 +1,6 @@
+# 构建产物（可用 python _src/build.py / build_ocr_demo.py 重新生成）
+价格打码水印工具.html
+ocr_demo.html
+
+# 历史临时文件
+_tmp_*.html
