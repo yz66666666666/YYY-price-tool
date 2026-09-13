@@ -643,7 +643,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 
 <footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
   图片仅在手机本地处理，不会上传 · 完全离线可用<br>
-  <span style="opacity:.85;">版本 <span id="verText">v1.3</span></span>
+  <span style="opacity:.85;">版本 <span id="verText">v1.4</span></span>
 </footer>
 
 <input type="file" id="fileInput" multiple hidden>
@@ -770,7 +770,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 <script>
 "use strict";
 /* 工具版本号：每次更新递增（页脚与导出文件名共用） */
-const TOOL_VER = "v1.3";
+const TOOL_VER = "v1.4";
 /* ================= 内嵌引擎资源（由构建脚本注入；PaddleOCR + onnxruntime-web，完全离线） ================= */
 const ORT_JS = "/*__ORT_JS_JSON__*/";
 const ORT_WASM_GZ = "/*__ORT_WASM_GZ_B64__*/";
@@ -1271,7 +1271,7 @@ function applyMaskScreen(b) {
     ctx.restore();
     return;
   }
-  if (t === "img" && S.maskImgEl) {
+  if (t === "img" && imgReady(S.maskImgEl, s.maskImgData)) {
     const img = S.maskImgEl;
     const zs = (S.zoom && S.zoom.scale) || 1;
     /* 要多大就裁多大：按打码框的真实大小（世界坐标）从素材里裁一块，放大框=裁更大的区域 */
@@ -1308,7 +1308,7 @@ function drawKwWmPreview() {
   if (!p || !p.kwWmBoxes || !p.kwWmBoxes.length) return;
   const kw = S.settings.kw;
   const kwT = kw.wmType === "image" ? "image" : "text";
-  const ready = kwT === "image" ? !!S.kwWmImgEl : !!((kw.wmText || "").trim());
+  const ready = kwT === "image" ? imgReady(S.kwWmImgEl, kw.wmImgData || "") : !!((kw.wmText || "").trim());
   if (!ready) return;
   const { scale, ox, oy } = S.zoom;
   ctx.save();
@@ -1370,7 +1370,8 @@ function drawWatermarkWorld(g, W, H, wm) {
 /* 世界坐标绘制图片水印（透明 PNG，输出图同样复用） */
 function drawImageWatermarkWorld(g, W, H, wi) {
   const img = S.wmImgEl;
-  if (!img || !wi.data) return;
+  /* 图必须与当前方案里的图一致；没解码好或对不上就不画，避免画出别的方案的图 */
+  if (!wi.data || !imgReady(img, wi.data)) return;
   g.save();
   g.globalAlpha = wi.opacity;
   const iw = Math.round(W * wi.size / 100);
@@ -2105,7 +2106,11 @@ function handleWmImgFile(file) {
       const data = c.toDataURL("image/png");
       S.settings.wmImg.data = data;
       const img2 = new Image();
-      img2.onload = () => { S.wmImgEl = img2; updateWmImgPreview(); };
+      img2.onload = () => {
+        S.wmImgEl = img2;
+        _putDecoded("wmImg", data, img2);   /* 记入解码缓存，切回来时不必重新解码 */
+        updateWmImgPreview();
+      };
       img2.src = data;
       updateSettingsUI();
       saveSettings();
@@ -2161,7 +2166,11 @@ function handleKwWmImgFile(file) {
       const data = c.toDataURL("image/png");
       S.settings.kw.wmImgData = data;
       const img2 = new Image();
-      img2.onload = () => { S.kwWmImgEl = img2; updateKwWmImgPreview(); };
+      img2.onload = () => {
+        S.kwWmImgEl = img2;
+        _putDecoded("kwWmImg", data, img2);
+        updateKwWmImgPreview();
+      };
       img2.src = data;
       updateSettingsUI();
       saveSettings();
@@ -2215,7 +2224,11 @@ function handleMaskImgFile(file) {
       const data = (w * h > 1024 * 1024) ? c.toDataURL("image/jpeg", 0.9) : c.toDataURL("image/png");
       S.settings.maskImgData = data;
       const img2 = new Image();
-      img2.onload = () => { S.maskImgEl = img2; updateMaskImgPreview(); };
+      img2.onload = () => {
+        S.maskImgEl = img2;
+        _putDecoded("maskImg", data, img2);
+        updateMaskImgPreview();
+      };
       img2.src = data;
       updateSettingsUI();
       saveSettings();
@@ -2654,7 +2667,7 @@ function renderPreview() {
   const s = S.settings;
   if (s.kw && s.kw.wmEnabled && p.kwWmBoxes && p.kwWmBoxes.length) {
     const kwT = s.kw.wmType === "image" ? "image" : "text";
-    const kwReady = kwT === "image" ? !!S.kwWmImgEl : !!((s.kw.wmText || "").trim());
+    const kwReady = kwT === "image" ? imgReady(S.kwWmImgEl, s.kw.wmImgData || "") : !!((s.kw.wmText || "").trim());
     if (kwReady) {
       for (const b of p.kwWmBoxes) {
         if (!kwWmBoxValid(b)) continue;
@@ -2664,7 +2677,7 @@ function renderPreview() {
     }
   }
   if (s.wm.enabled && s.wm.text.trim()) drawWatermarkWorld(g, p.w, p.h, s.wm);
-  if (s.wmImg.enabled && s.wmImg.data) drawImageWatermarkWorld(g, p.w, p.h, s.wmImg);
+  if (s.wmImg.enabled && imgReady(S.wmImgEl, s.wmImg.data)) drawImageWatermarkWorld(g, p.w, p.h, s.wmImg);
   g.restore();
 }
 
@@ -2697,6 +2710,8 @@ function applyScheme(i) {
   curScheme = i;
   S.settings = mergeSettings(schemes[i]);
   saveSettings();
+  /* 关键：图片必须跟着方案一起换。漏掉这一步会导致「改一个方案的图，别的方案也跟着变」 */
+  loadImageEls();
   updateSettingsUI();
   renderSchemeBtns();
   saveSchemes();
@@ -2835,7 +2850,7 @@ function downloadExport() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = (mode === "lite" ? "价格打码设置" : "价格打码完整备份") + "_v" + (window.TOOL_VER || "") + ".json";
+  a.download = (mode === "lite" ? "价格打码设置" : "价格打码完整备份") + "_" + TOOL_VER + ".json";
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
@@ -2854,27 +2869,57 @@ function copyExport() {
     }
   } catch (e) { toast("请长按文本手动复制"); }
 }
-/* 恢复设置里保存的三张图片（图片水印/关键词水印图/打码素材） */
-function loadImageEls() {
-  /* 恢复已保存的图片水印 */
-  if (S.settings.wmImg && S.settings.wmImg.data) {
-    const img = new Image();
-    img.onload = () => { S.wmImgEl = img; updateWmImgPreview(); };
-    img.src = S.settings.wmImg.data;
-  }
-  /* 恢复已保存的关键词水印独立图片 */
-  if (S.settings.kw && S.settings.kw.wmImgData) {
-    const img = new Image();
-    img.onload = () => { S.kwWmImgEl = img; updateKwWmImgPreview(); };
-    img.src = S.settings.kw.wmImgData;
-  }
-  /* 恢复已保存的打码素材图 */
-  if (S.settings.maskImgData) {
-    const img = new Image();
-    img.onload = () => { S.maskImgEl = img; updateMaskImgPreview(); };
-    img.src = S.settings.maskImgData;
-  }
+/* 恢复设置里保存的三张图片（图片水印/关键词水印图/打码素材）
+   —— 三张图必须与「当前方案」严格对应：设置里没有图 → 立刻清空，绝不能留着上一个方案的图。
+   图片没变时直接复用已解码的 <img>，切换方案零延迟、不闪烁；变了才重新解码。
+   用 gen 标记本次加载：解码是异步的，期间用户又切了方案的话，旧的 onload 结果会被丢弃，
+   不会把上一个方案的图错装到当前方案上。 */
+let _imgGen = 0;
+const _imgElCache = { wmImg: {}, kwWmImg: {}, maskImg: {} };   // kind -> { dataURL: 已解码的 <img> }
+const MAX_DECODED = 4;   // 每类图最多记住 4 张已解码的图，防止方案多时内存膨胀（手机上尤其要紧）
+/* 记住一张已解码的图；超过上限就丢掉最久没用到的 */
+function _putDecoded(kind, data, el) {
+  const box = _imgElCache[kind];
+  box[data] = el;
+  const keys = Object.keys(box);
+  if (keys.length > MAX_DECODED) delete box[keys[0]];   // 对象保留插入顺序，第一个就是最旧的
 }
+/* 取出某张图已解码的 <img>：先在解码缓存里找，再退而用当前正在用的那个 */
+function _pickDecoded(kind, data, curEl) {
+  const hit = _imgElCache[kind][data];
+  if (hit && hit.complete) return hit;
+  if (curEl && curEl.complete && curEl.src === data) return curEl;
+  return null;
+}
+function loadOneImg(kind, data, assign, curEl) {
+  if (!data) {                       // 当前方案没有这张图：清空，避免沿用上一个方案的图
+    assign(null);
+    return;
+  }
+  const ready = _pickDecoded(kind, data, curEl);
+  if (ready) { assign(ready); return; }        // 已经解码过：立刻可用，切方案零延迟
+  assign(null);                                 // 换了图：先清空，解码期间绝不画上一张图
+  const el = new Image();
+  const gen = _imgGen;
+  el.onload = () => {
+    if (gen !== _imgGen) return;     // 加载期间方案已切换，丢弃这次结果
+    _putDecoded(kind, data, el);
+    assign(el);
+  };
+  el.src = data;
+}
+function loadImageEls() {
+  _imgGen++;
+  const s = S.settings || {};
+  /* 恢复已保存的图片水印 */
+  loadOneImg("wmImg", (s.wmImg && s.wmImg.data) || "", el => { S.wmImgEl = el; updateWmImgPreview(); }, S.wmImgEl);
+  /* 恢复已保存的关键词水印独立图片 */
+  loadOneImg("kwWmImg", (s.kw && s.kw.wmImgData) || "", el => { S.kwWmImgEl = el; updateKwWmImgPreview(); }, S.kwWmImgEl);
+  /* 恢复已保存的打码素材图 */
+  loadOneImg("maskImg", s.maskImgData || "", el => { S.maskImgEl = el; updateMaskImgPreview(); }, S.maskImgEl);
+}
+/* 图片是否已解码可用：绘制前用它兜底，保证画出来的图就是当前方案里的图 */
+function imgReady(el, data) { return !!(el && data && el.complete && el.src === data); }
 /* 导入设置：换浏览器/换手机后粘贴导出内容恢复 */
 function openImport() {
   $("importText").value = "";
@@ -2907,6 +2952,8 @@ function doImport() {
       if (S.settings.kw) S.settings.kw.wmImgData = "";
       S.settings.maskImgData = "";
       S.wmImgEl = null; S.kwWmImgEl = null; S.maskImgEl = null;
+      /* 换了一整套设置，解码缓存整体作废，避免误用旧图 */
+      _imgElCache.wmImg = {}; _imgElCache.kwWmImg = {}; _imgElCache.maskImg = {};
     }
     if (Array.isArray(data.schemes)) {
       schemes = data.schemes.map(s => s || null);
@@ -2956,7 +3003,7 @@ function renderOutput(p) {
     }
     /* 识别文字位置打水印：全部识别文字 / 连续数字串（订单号） */
     if (wmo && wmo.enabled) {
-      const wmType = (wmo.type === "image" && S.settings.wmImg.data) ? "image" : "text";
+      const wmType = (wmo.type === "image" && imgReady(S.wmImgEl, S.settings.wmImg.data)) ? "image" : "text";
       const wmReady = wmType === "image" || !!S.settings.wm.text.trim();
       if (wmReady) {
         for (const ln of p.ocrWords) {
@@ -3017,7 +3064,8 @@ function drawKwTextWatermark(g, box, k, gkw) {
 /* 关键词水印：图片版——用关键词水印自己上传的图片，等比缩放至框的百分比大小，居中 */
 function drawKwImageWatermark(g, box, k, gkw) {
   const img = S.kwWmImgEl;
-  if (!img || box.w < 8 || box.h < 8) return;
+  const kwData = (S.settings.kw && S.settings.kw.wmImgData) || "";
+  if (box.w < 8 || box.h < 8 || !imgReady(img, kwData)) return;
   const wmSize = k && k.wmSize != null ? k.wmSize : (gkw.wmImgSize != null ? gkw.wmImgSize : 80);
   const pct = wmSize / 100;
   const maxW = box.w * pct, maxH = box.h * pct;
@@ -3039,7 +3087,8 @@ function drawBoxWm(g, box, type) {
 /* 在指定框内盖图片水印：按框大小等比缩放并居中 */
 function drawBoxImageWatermark(g, box) {
   const img = S.wmImgEl;
-  if (!img || box.w < 8 || box.h < 8) return;
+  const data = (S.settings.wmImg && S.settings.wmImg.data) || "";
+  if (box.w < 8 || box.h < 8 || !imgReady(img, data)) return;
   const r = Math.min(box.w / img.width, box.h / img.height);
   const dw = img.width * r, dh = img.height * r;
   g.save();
@@ -3106,7 +3155,7 @@ function applyMaskWorld(g, src, x, y, w, h) {
     g.restore();
     return;
   }
-  if (t === "img" && S.maskImgEl) {
+  if (t === "img" && imgReady(S.maskImgEl, s.maskImgData)) {
     const img = S.maskImgEl;
     /* 要多大就裁多大：按打码框的真实大小从素材里裁一块，放大框=裁更大的区域 */
     let cw = w, ch = h;

@@ -87,10 +87,30 @@ def collect_files():
     return out
 
 
+def _blob_sha_py(path):
+    """不依赖 git 的实现：git 的 blob sha = sha1("blob <字节数>\\0" + 文件内容)。
+    本机没装 git 时用这个，结果与 git hash-object --no-filters 一致。"""
+    import hashlib
+    size = os.path.getsize(path)
+    h = hashlib.sha1()
+    h.update(("blob %d\0" % size).encode("ascii"))
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def blob_sha(path):
-    """git hash-object --no-filters 的结果就是 GitHub 的 blob sha（跳过换行转换）。"""
-    return subprocess.check_output(
-        ["git", "hash-object", "--no-filters", path], text=True).strip()
+    """git hash-object --no-filters 的结果就是 GitHub 的 blob sha（跳过换行转换）。
+    本机没有 git 时自动退回纯 Python 实现（见上）。"""
+    try:
+        return subprocess.check_output(
+            ["git", "hash-object", "--no-filters", path], text=True).strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return _blob_sha_py(path)
 
 
 def main():
