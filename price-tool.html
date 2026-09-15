@@ -236,6 +236,27 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 #exportText{width:100%; height:130px; box-sizing:border-box; border:1px solid var(--line); border-radius:8px;
   padding:8px; font:12px/1.5 ui-monospace, Menlo, Consolas, monospace; color:var(--tx);
   resize:none; overflow:auto; background:#fff; word-break:break-all;}
+/* 保存失败/空间不足的红色告警条：必须显眼，绝不静默失败 */
+#storageAlert{position:sticky; top:0; z-index:99; background:#dc2626; color:#fff; padding:10px 12px;
+  font-size:13px; line-height:1.5; box-shadow:0 2px 8px rgba(0,0,0,.25);}
+#storageAlert.hidden{display:none;}
+#storageAlertText{word-break:break-all;}
+#storageAlert .sa-row{display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;}
+#storageAlert .mini-btn{background:#fff; color:#b91c1c; border-color:#fff; font-weight:600;}
+/* 存储占用面板 */
+#storageModal{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
+#storageModal.hidden{display:none;}
+#storageMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
+#storagePanel{position:relative; width:88vw; max-width:420px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:12px; padding:12px; box-sizing:border-box; max-height:86vh; overflow:auto;}
+#storageHead{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+#storageHead b{font-size:14px; color:var(--tx);}
+#storageClose{border:none; background:none; font-size:18px; color:var(--mut); cursor:pointer; padding:0 4px;}
+#storageBody{font-size:13px; color:var(--tx); line-height:1.6;}
+#storageBody .srow{display:flex; justify-content:space-between; gap:8px; padding:4px 0; border-bottom:1px dashed var(--line);}
+#storageBody .srow span:last-child{color:var(--mut); white-space:nowrap;}
+#storageBody .stitle{margin:10px 0 4px; font-weight:600;}
+#storageBody .snote{color:var(--mut); font-size:12px; margin:6px 0 0;}
 #kwWmDlg{position:fixed; inset:0; z-index:98; display:flex; align-items:center; justify-content:center;}
 #kwWmDlg.hidden{display:none;}
 #kwWmMask{position:absolute; inset:0; background:rgba(0,0,0,.5);}
@@ -275,6 +296,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
     <div id="engineStatus">引擎未加载</div>
     <button id="btnImport" title="导入设置（换浏览器/换手机后恢复）">⬆ 导入</button>
     <button id="btnExport" title="导出当前全部设置">⬇ 导出</button>
+    <button id="btnStorage" title="查看存储占用情况">📊 存储</button>
   </div>
 </header>
 
@@ -643,7 +665,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 
 <footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
   图片仅在手机本地处理，不会上传 · 完全离线可用<br>
-  <span style="opacity:.85;">版本 <span id="verText">v1.4</span></span>
+  <span style="opacity:.85;">版本 <span id="verText">v1.5</span></span>
 </footer>
 
 <input type="file" id="fileInput" multiple hidden>
@@ -723,6 +745,25 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
     </div>
   </div>
 </div>
+<div id="storageAlert" class="hidden">
+  <div id="storageAlertText"></div>
+  <div class="sa-row">
+    <button class="mini-btn" id="storageAlertExport">⬇ 导出备份</button>
+    <button class="mini-btn" id="storageAlertDetail">📊 看占用明细</button>
+    <button class="mini-btn" id="storageAlertClose">知道了</button>
+  </div>
+</div>
+<div id="storageModal" class="hidden">
+  <div id="storageMask" onclick="closeStoragePanel()"></div>
+  <div id="storagePanel">
+    <div id="storageHead"><b>📊 存储占用</b><button id="storageClose" onclick="closeStoragePanel()" aria-label="关闭">✕</button></div>
+    <div id="storageBody"></div>
+    <div class="nav">
+      <button class="btn sec" id="btnStorageExport">⬇ 导出备份</button>
+      <button class="btn" id="storageOk">知道了</button>
+    </div>
+  </div>
+</div>
 <div id="kwWmDlg" class="hidden">
   <div id="kwWmMask" onclick="closeKwWmDlg()"></div>
   <div id="kwWmPanel">
@@ -770,7 +811,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 <script>
 "use strict";
 /* 工具版本号：每次更新递增（页脚与导出文件名共用） */
-const TOOL_VER = "v1.4";
+const TOOL_VER = "v1.5";
 /* ================= 内嵌引擎资源（由构建脚本注入；PaddleOCR + onnxruntime-web，完全离线） ================= */
 let ORT_JS = "";
 let ORT_WASM_GZ = "";
@@ -936,6 +977,308 @@ function hexToRgba(hex, a) {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;
 }
+/* ==================== 统一存储层（公共储物柜 localStorage → 私人仓库 IndexedDB） ====================
+   背景：浏览器给同一个域名的所有网页只分约 5~10MB 的 localStorage，而且【共用】。
+   同域名下还有「订单管理系统」，本工具的方案图片就占了约 9MB，把两边都挤到存不进去，
+   一旦配额满，localStorage.setItem 直接抛 QuotaExceededError，界面看着正常其实没存住。
+
+   解决：体积大的方案和设置搬进 IndexedDB（容量按几百 MB 计，且与 localStorage 各自独立）。
+   安全策略（数据第一，绝不冒进）：
+     1) 搬家前：localStorage 是主存储，写失败【大声告警】；
+     2) 搬家中：写进新仓库 → 立刻读回来逐项核对 → 完全一致才算成功；
+     3) 校验不过 → 什么都不改，继续用 localStorage（自动回退，绝不半途而废）；
+     4) 搬家后：IndexedDB 是主存储，localStorage 继续双写当保险，写失败【不再算错误】；
+     5) 旧数据【不自动删除】，留作后路，由用户自己在「存储占用」面板里决定是否清理。
+   注意：这里只放"设置和方案"这类应用数据；模型缓存另用 price-tool-model-cache 库，互不影响。 */
+const APP_DB_NAME = "price_tool_db";     // 库名与订单系统的 om_main_db 刻意区分，避免互相覆盖
+const APP_DB_VER = 1;
+const APP_STORE = "main";
+const APP_KEY = "appdata";               // 一个键存整份数据：设置 + 方案（沿用旧结构，风险最小）
+const MIGRATED_KEY = "price-tool-migratedToIDB";
+const LEGACY_SETTINGS_KEY = "price-tool-settings";   // 旧柜子：设置
+const LEGACY_SCHEMES_KEY = "price-tool-schemes";     // 旧柜子：方案（体积大头）
+const WRITE_DELAY = 300;                 // 连续改动合并写入的等待时间（拖滑块不会每动一下就写一次）
+
+let _appDb = null;
+let _appDbTried = false;
+let _storageMode = "local";              // 'local' = 还没搬家，'idb' = 已搬到新仓库
+let _alertedAt = 0;
+let _legacyMirrorFailed = false;   // 搬家后"旧柜子这份保险"是否写失败（空间被占满时会发生）
+let _alertQueue = [];                    // 界面还没就绪时先攒着，就绪后一次性显示
+
+/* 打开新仓库。任何异常/超时都返回 null，调用方自动退回 localStorage，功能不能坏 */
+function openAppDB() {
+  if (_appDb) return Promise.resolve(_appDb);
+  if (_appDbTried) return Promise.resolve(null);
+  _appDbTried = true;
+  return new Promise(resolve => {
+    if (!window.indexedDB) { resolve(null); return; }
+    let req;
+    try { req = indexedDB.open(APP_DB_NAME, APP_DB_VER); } catch (e) { resolve(null); return; }
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(APP_STORE)) db.createObjectStore(APP_STORE);
+    };
+    req.onsuccess = () => { _appDb = req.result; resolve(_appDb); };
+    req.onerror = () => resolve(null);
+    req.onblocked = () => resolve(null);
+    /* 无痕模式等场景可能永远不回调，超时兜底，绝不让启动卡死 */
+    setTimeout(() => { if (!_appDb) resolve(null); }, 3000);
+  });
+}
+/* 写新仓库：深拷贝后再存（存进去的必须是独立快照，之后内存里怎么改都不影响它） */
+async function idbAppWrite(payload) {
+  const db = await openAppDB();
+  if (!db) return false;
+  let snapshot;
+  try { snapshot = JSON.parse(JSON.stringify(payload)); } catch (e) { snapshot = payload; }
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(APP_STORE, "readwrite");
+      tx.objectStore(APP_STORE).put(snapshot, APP_KEY);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
+}
+/* 读新仓库：同样返回独立副本 */
+async function idbAppRead() {
+  const db = await openAppDB();
+  if (!db) return null;
+  return new Promise(resolve => {
+    try {
+      const rq = db.transaction(APP_STORE, "readonly").objectStore(APP_STORE).get(APP_KEY);
+      rq.onsuccess = () => {
+        const v = rq.result;
+        if (!v) { resolve(null); return; }
+        try { resolve(JSON.parse(JSON.stringify(v))); } catch (e) { resolve(v); }
+      };
+      rq.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+/* 读旧柜子（同步，用于"先亮界面"） */
+function legacyReadAll() {
+  let settings = null, schemesData = null;
+  try { const raw = localStorage.getItem(LEGACY_SETTINGS_KEY); if (raw) settings = JSON.parse(raw); } catch (e) {}
+  try { const raw = localStorage.getItem(LEGACY_SCHEMES_KEY); if (raw) schemesData = JSON.parse(raw); } catch (e) {}
+  return { settings: settings, schemesData: schemesData };
+}
+/* 把当前全部设置和方案打包成一份（存进新仓库、以及双写到旧柜子的就是它） */
+function buildStorePayload() {
+  return {
+    savedAt: new Date().toISOString(),
+    settings: JSON.parse(JSON.stringify(S.settings || {})),
+    schemes: JSON.parse(JSON.stringify(schemes || [])),
+    schemeNames: (schemeNames || []).slice(),
+    curScheme: curScheme
+  };
+}
+/* 校验搬家结果：方案个数、当前方案、方案名、每个方案的图片素材都必须一字不差 */
+function verifyMigrated(a, b) {
+  if (!b || !Array.isArray(b.schemes)) return false;
+  if (a.schemes.length !== b.schemes.length) return false;
+  if (a.curScheme !== b.curScheme) return false;
+  if (JSON.stringify(a.schemeNames) !== JSON.stringify(b.schemeNames)) return false;
+  return JSON.stringify(a.schemes) === JSON.stringify(b.schemes);
+}
+/* 把从新仓库读到的数据套进当前状态 */
+function applyStorePayload(p) {
+  if (!p) return false;
+  if (Array.isArray(p.schemes)) {
+    schemes = p.schemes.map(s => s || null);
+    schemeNames = (Array.isArray(p.schemeNames) && p.schemeNames.length === schemes.length)
+      ? p.schemeNames.slice()
+      : schemes.map((s, i) => "方案" + (i + 1));
+    if (!schemes.length) { schemes = [null]; schemeNames = ["方案一"]; }
+    curScheme = (typeof p.curScheme === "number" && p.curScheme >= 0 && p.curScheme < schemes.length) ? p.curScheme : 0;
+  }
+  if (p.settings) S.settings = mergeSettings(p.settings);
+  return true;
+}
+/* ===== 合并写入：连续改动只写一次，避免拖滑块时反复写盘 ===== */
+let _saveTimer = null;
+let _savePending = false;
+async function flushStore() {
+  if (!_savePending) return;
+  _savePending = false;
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  await writeStoreNow();
+}
+function scheduleStoreSave() {
+  _savePending = true;
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { _saveTimer = null; flushStore(); }, WRITE_DELAY);
+}
+/* 真正落盘：新仓库为主，旧柜子双写保险 */
+async function writeStoreNow() {
+  const payload = buildStorePayload();
+  if (_storageMode === "idb") {
+    const ok = await idbAppWrite(payload);
+    if (!ok) storageAlert("⚠️ 数据保存失败：新的存储空间写不进去。请立刻点「⬇ 导出」备份一次。");
+    /* 旧柜子继续写一份当保险。它可能已被同域名其他应用占满 —— 此时写失败【不算错误】
+       （新仓库已经存好了，这正是搬家的目的）。但"保险失效"这件事要如实记下来，
+       在「📊 存储」面板里告知用户，建议清理老数据把保险恢复上。 */
+    try {
+      localStorage.setItem(LEGACY_SETTINGS_KEY, JSON.stringify(payload.settings));
+      localStorage.setItem(LEGACY_SCHEMES_KEY, JSON.stringify({ schemes: payload.schemes, cur: payload.curScheme, names: payload.schemeNames }));
+      _legacyMirrorFailed = false;
+    } catch (e) {
+      _legacyMirrorFailed = true;
+    }
+    return ok;
+  }
+  /* 还没搬家：旧柜子是主存储，写失败必须大声告警，绝不静默失败 */
+  return legacyWrite(payload);
+}
+/* 写旧柜子：失败一定告警（区分"空间满"和"其他错误"） */
+function legacyWrite(payload) {
+  try {
+    localStorage.setItem(LEGACY_SETTINGS_KEY, JSON.stringify(payload.settings));
+    localStorage.setItem(LEGACY_SCHEMES_KEY, JSON.stringify({ schemes: payload.schemes, cur: payload.curScheme, names: payload.schemeNames }));
+    return true;
+  } catch (e) {
+    const quota = !!(e && (e.name === "QuotaExceededError" || e.name === "NS_ERROR_DOM_QUOTA_REACHED" || e.code === 22 || e.code === 1014));
+    storageAlert(quota
+      ? "⚠️ 浏览器存储空间已满，刚才的改动【没能保存】！请点「⬇ 导出」立刻备份，并到「📊 存储」里清理旧数据。"
+      : "⚠️ 数据保存失败：" + ((e && e.message) || e) + "。请立刻点「⬇ 导出」备份。");
+    return false;
+  }
+}
+/* 保存失败/空间不足的统一告警：红色横幅 + 一键备份（只提醒，不静默） */
+function storageAlert(msg) {
+  const now = Date.now();
+  if (now - _alertedAt < 8000) return;      // 同类提示最多 8 秒一次，不刷屏
+  _alertedAt = now;
+  const bar = (typeof document !== "undefined") && document.getElementById("storageAlert");
+  if (!bar) { _alertQueue.push(msg); return; }   // 界面还没就绪，先攒着
+  const t = document.getElementById("storageAlertText");
+  if (t) t.textContent = msg;
+  bar.classList.remove("hidden");
+}
+function flushStorageAlerts() {
+  if (!_alertQueue.length) return;
+  const msg = _alertQueue[_alertQueue.length - 1];
+  _alertQueue = [];
+  const bar = document.getElementById("storageAlert");
+  const t = document.getElementById("storageAlertText");
+  if (bar && t) { t.textContent = msg; bar.classList.remove("hidden"); }
+}
+/* 启动时决定数据从哪来：新仓库优先；只有在"已确认搬过家"或旧柜子为空时才认新仓库，
+   否则一律先信旧柜子（防止旧柜子里有更新的改动被新仓库的旧数据盖掉） */
+async function hydrateFromStorage() {
+  const p = await idbAppRead();
+  let migrated = false;
+  try { migrated = localStorage.getItem(MIGRATED_KEY) === "1"; } catch (e) {}
+  const legacy = legacyReadAll();
+  const legacyEmpty = !legacy.settings && !legacy.schemesData;
+  if (p && Array.isArray(p.schemes) && (migrated || legacyEmpty)) {
+    _storageMode = "idb";
+    return { source: "idb", payload: p };
+  }
+  return { source: "local", payload: null };
+}
+/* 搬家：写了新仓库 → 读回来核对 → 一致才认。任何一步不对就原样退回旧办法 */
+async function migrateToIDB() {
+  const fromLocal = legacyReadAll();
+  if (!fromLocal.settings && !fromLocal.schemesData) {
+    /* 全新用户（旧柜子没东西）：直接把当前状态放进新仓库 */
+    const okFresh = await idbAppWrite(buildStorePayload());
+    if (okFresh) { _storageMode = "idb"; try { localStorage.setItem(MIGRATED_KEY, "1"); } catch (e) {} return true; }
+    return false;
+  }
+  const before = buildStorePayload();          // 以"当前内存状态"为准（它就是刚从旧柜子读出来的）
+  const wrote = await idbAppWrite(before);
+  if (!wrote) return false;                    // 写不进去（比如无痕模式）→ 安静退回，功能照旧
+  const back = await idbAppRead();
+  if (!verifyMigrated(before, back)) {         // 读回来对不上 → 一个字都不改
+    console.warn("[存储] 搬家校验未通过，继续使用原来的存储方式（数据未受影响）");
+    return false;
+  }
+  _storageMode = "idb";
+  try { localStorage.setItem(MIGRATED_KEY, "1"); } catch (e) {}
+  return true;
+}
+/* 估算两个柜子各占多少（面板展示用；粗算即可） */
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(2) + " MB";
+}
+function readStorageStats() {
+  const rows = [];
+  let localOwn = 0, localOthers = 0;
+  const ownKeys = { [LEGACY_SETTINGS_KEY]: "设置（旧柜子）", [LEGACY_SCHEMES_KEY]: "方案（旧柜子）", [MIGRATED_KEY]: "搬家标记" };
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      const v = localStorage.getItem(k) || "";
+      const bytes = (k.length + v.length) * 2;      // localStorage 按 UTF-16 计费：字符数 × 2
+      if (ownKeys[k]) rows.push({ key: k, label: ownKeys[k], bytes: bytes });
+      else localOthers += bytes;
+      if (ownKeys[k]) localOwn += bytes;
+    }
+  } catch (e) {}
+  let idbBytes = 0;
+  try { idbBytes = JSON.stringify({ settings: S.settings, schemes: schemes, names: schemeNames }).length; } catch (e) {}
+  return { rows: rows, localOwn: localOwn, localOthers: localOthers, idbBytes: idbBytes, mode: _storageMode };
+}
+/* ===== 存储占用面板：让用户自己看得见"两个柜子各占多少" ===== */
+function openStoragePanel() {
+  renderStoragePanel();
+  $("storageModal").classList.remove("hidden");
+}
+function closeStoragePanel() { $("storageModal").classList.add("hidden"); }
+function renderStoragePanel() {
+  const st = readStorageStats();
+  const body = $("storageBody");
+  const html = [];
+  html.push('<div class="stitle">方案和设置（本工具的主要数据）</div>');
+  if (st.mode === "idb") {
+    html.push('<div class="srow"><span>存的位置</span><span>新的存储空间（容量大、不与别的工具抢）</span></div>');
+    html.push('<div class="srow"><span>占用</span><span>约 ' + fmtBytes(st.idbBytes) + '</span></div>');
+    html.push('<p class="snote">✓ 已启用新存储：方案数量不再受 5~10MB 限制，也不会再和「订单管理系统」互相挤。</p>');
+    html.push('<div class="srow"><span>老储物柜里的备份</span><span>' + (_legacyMirrorFailed ? "写不进去（空间被占满）" : "正常") + '</span></div>');
+    if (_legacyMirrorFailed) {
+      html.push('<p class="snote">⚠ 老储物柜已经满了，双保险的那份备份没能写进去。你的数据在新存储里是安全的，但建议清掉下面的老数据，把这道保险恢复上。</p>');
+    }
+  } else {
+    html.push('<div class="srow"><span>存的位置</span><span>老的公共储物柜（localStorage）</span></div>');
+    html.push('<p class="snote">⚠ 还在用老方式（可能是浏览器不支持新存储）。老方式容量只有约 5~10MB，且与同域名的其他工具共用。</p>');
+  }
+  html.push('<div class="stitle">老储物柜里本工具的数据</div>');
+  if (!st.rows.length) html.push('<div class="srow"><span>（没有）</span><span>0 B</span></div>');
+  st.rows.forEach(r => html.push('<div class="srow"><span>' + r.label + '</span><span>' + fmtBytes(r.bytes) + '</span></div>'));
+  html.push('<div class="srow"><span><b>本工具合计</b></span><span><b>' + fmtBytes(st.localOwn) + '</b></span></div>');
+  html.push('<div class="srow"><span>同域名其他工具占用</span><span>' + fmtBytes(st.localOthers) + '</span></div>');
+  html.push('<p class="snote">老储物柜是同一个域名下所有网页共用的，上限约 5~10MB。搬家后本工具只留下一张小标记。</p>');
+  const canClean = (st.mode === "idb" && st.rows.some(r => r.key === LEGACY_SETTINGS_KEY || r.key === LEGACY_SCHEMES_KEY));
+  html.push('<div class="stitle">清理老数据（可选）</div>');
+  html.push('<p class="snote">' + (canClean
+    ? '数据已经安全搬到新存储了。确认用着一切正常后，可以清掉老储物柜里的旧副本，给「订单管理系统」腾出空间。清理不会影响你的方案和设置（它们在新存储里），清完后刷新一下页面即可。'
+    : (st.mode === "idb" ? '老储物柜里已经没有本工具的旧数据了。' : '还没搬到新存储，暂时不能清理。')) + '</p>');
+  if (canClean) {
+    html.push('<div class="nav" style="margin:8px 0 0;"><button class="btn sec" id="btnCleanLegacy">🧹 清理老数据（' + fmtBytes(st.rows.filter(r => r.key === LEGACY_SETTINGS_KEY || r.key === LEGACY_SCHEMES_KEY).reduce((a, r) => a + r.bytes, 0)) + '）</button></div>');
+  }
+  body.innerHTML = html.join("");
+  const clean = $("btnCleanLegacy");
+  if (clean) clean.onclick = cleanLegacyStorage;
+}
+/* 清理旧柜子里的本工具数据：只删旧副本，新存储里的数据一个字不动 */
+function cleanLegacyStorage() {
+  if (_storageMode !== "idb") { toast("还没搬到新存储，不能清理"); return; }
+  const st = readStorageStats();
+  const confirmMsg = "即将清理老储物柜里的旧副本：\n"
+    + st.rows.filter(r => r.key === LEGACY_SETTINGS_KEY || r.key === LEGACY_SCHEMES_KEY)
+        .map(r => "· " + r.label + " " + fmtBytes(r.bytes)).join("\n")
+    + "\n\n你的方案和设置在新存储里，不受影响。\n清完后刷新页面即可。确定要清理吗？";
+  if (!window.confirm(confirmMsg)) return;
+  try { localStorage.removeItem(LEGACY_SETTINGS_KEY); } catch (e) {}
+  try { localStorage.removeItem(LEGACY_SCHEMES_KEY); } catch (e) {}
+  toast("已清理老数据，本工具不再占用公共空间");
+  renderStoragePanel();
+}
 function saveSettings() {
   try { localStorage.setItem("price-tool-settings", JSON.stringify(S.settings)); } catch(e){}
   /* 预览模式激活时：任何设置改动都自动重建标记（秒级）并实时重绘预览图 */
@@ -988,7 +1331,7 @@ function mergeSettings(src) {
 function loadSettings() {
   let s = mergeSettings(null);
   try {
-    const saved = JSON.parse(localStorage.getItem("price-tool-settings"));
+    const saved = JSON.parse(localStorage.getItem(LEGACY_SETTINGS_KEY));
     if (saved) s = mergeSettings(saved);
   } catch(e){}
   return s;
@@ -2753,15 +3096,15 @@ function renderPreview() {
 }
 
 /* ================= 方案系统（可动态增删，名称可自定义） ================= */
-const SCHEME_KEY = "price-tool-schemes";
 const MAX_SCHEMES = 20;
 const DEFAULT_SCHEME_NAMES = ["方案一", "方案二", "方案三"];
 let schemeNames = DEFAULT_SCHEME_NAMES.slice();
 let schemes = [null, null, null];
 let curScheme = 0;
+/* 启动时先从老储物柜同步读一份（保证秒开）；若数据已搬到新存储，异步阶段会用新存储里的再覆盖一次 */
 function loadSchemes() {
   try {
-    const saved = JSON.parse(localStorage.getItem(SCHEME_KEY));
+    const saved = JSON.parse(localStorage.getItem(LEGACY_SCHEMES_KEY));
     if (saved) {
       if (Array.isArray(saved.schemes)) {
         schemes = saved.schemes.map(s => s || null);
@@ -2775,7 +3118,7 @@ function loadSchemes() {
   if (!schemes.length) { schemes = [null]; schemeNames = ["方案一"]; }
 }
 function saveSchemes() {
-  try { localStorage.setItem(SCHEME_KEY, JSON.stringify({ schemes, cur: curScheme, names: schemeNames })); } catch (e) {}
+  scheduleStoreSave();          // 统一走存储层（新仓库为主 + 旧柜子双写，失败会告警）
 }
 function applyScheme(i) {
   curScheme = i;
@@ -3034,8 +3377,8 @@ function doImport() {
       }
     }
     if (typeof data.curScheme === "number" && data.curScheme >= 0 && data.curScheme < schemes.length) curScheme = data.curScheme;
-    saveSettings();
-    saveSchemes();
+    /* 导入是用户的明确动作，立刻落盘、不做合并等待（避免刚导入就被刷新冲掉） */
+    flushStore();
     loadImageEls();
     updateSettingsUI();
     renderSchemeBtns();
@@ -3471,8 +3814,14 @@ function bindUI() {
   $("btnImport").onclick = openImport;
   $("btnImportCancel").onclick = closeImport;
   $("btnImportOk").onclick = doImport;
-  $("btnImportFile").onclick = () => $("importFileInput").click();
-  $("importFileInput").onchange = importFromFile;
+  /* 存储告警条与占用面板 */
+  $("btnStorage").onclick = openStoragePanel;
+  $("storageClose").onclick = closeStoragePanel;
+  $("storageOk").onclick = closeStoragePanel;
+  $("btnStorageExport").onclick = () => { downloadExport(); };
+  $("storageAlertClose").onclick = () => $("storageAlert").classList.add("hidden");
+  $("storageAlertExport").onclick = () => { downloadExport(); toast("已把备份文件发给你，请保存好"); };
+  $("storageAlertDetail").onclick = openStoragePanel;
   $("btnSaveAll").onclick = saveAll;
   $("btnSaveEdit").onclick = () => savePhotos([curPhoto()]);
 }
@@ -3630,7 +3979,12 @@ async function rerunCurrent() {
   toast(okMsg);
 }
 
-/* ================= 启动 ================= */
+/* ================= 启动 =================
+   顺序很讲究：
+   ① 先用老储物柜里的数据把界面【同步】点亮（秒开，不让用户等）；
+   ② 再【异步】去新存储核对：如果数据已经搬过去了，就用新存储里的（并重画一遍界面）；
+   ③ 全新用户或还没搬家的用户，在这一步完成搬家（写完立刻读回来核对，对不上就原样退回）。
+   这样既有"秒开"的体验，又不会出现"读到旧数据"的问题。 */
 const verEl = $("verText");
 if (verEl) verEl.textContent = TOOL_VER;
 S.settings = loadSettings();
@@ -3644,6 +3998,30 @@ updateSettingsUI();
 setStep(1);
 try { localStorage.removeItem("price-tool-templates"); } catch (e) {}   // 清理旧版模板残留
 window.addEventListener("resize", () => { if (S.step === 3) resetCanvas(); });
+/* 关闭/切走页面前，把还没落盘的改动立刻写掉（合并写入有 300ms 等待，不能让它丢掉） */
+window.addEventListener("pagehide", () => { flushStore(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushStore(); });
+flushStorageAlerts();
+
+/* ② 异步阶段：接上新存储 */
+(async () => {
+  try {
+    const r = await hydrateFromStorage();
+    if (r.source === "idb" && r.payload) {
+      applyStorePayload(r.payload);     // 用新存储里的数据（更新）
+      loadImageEls();
+      renderSchemeBtns();
+      updateSettingsUI();
+      return;
+    }
+    /* 新存储里没有（或还没搬过）：尝试搬家，成功后就以新存储为主 */
+    const ok = await migrateToIDB();
+    if (ok) await writeStoreNow();      // 把当前状态写实，并双写到老柜子
+  } catch (e) {
+    /* 异步阶段出任何问题都不能影响使用：安静退回老方式 */
+    console.warn("[存储] 新存储初始化失败，继续使用原来的方式：", e);
+  }
+})();
 /* 注：不自动预载引擎——部分手机浏览器（如 vivo 自带）在页面刚打开时承受不了模型解码，会崩溃。改为点「开始识别」时加载，配合模型缓存，第二次打开依然很快。 */
 
 /* 自检模式：URL 带 ?selftest=1 时自动验证引擎与 OCR（诊断用） */
