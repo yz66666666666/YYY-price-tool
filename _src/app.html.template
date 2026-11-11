@@ -173,6 +173,18 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 /* step nav */
 .nav{display:flex; gap:10px; margin-top:6px;}
 .nav .btn{flex:1;}
+/* 悬浮操作条：固定在屏幕底部，滑到哪都能直接点「开始识别并打码」 */
+#runBar{
+  position:fixed; left:0; right:0; bottom:0; z-index:70; margin:0;
+  display:flex; justify-content:center; align-items:center;
+  padding:10px 16px calc(10px + env(safe-area-inset-bottom));
+  background:rgba(244,246,245,.95);
+  -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px);
+  border-top:1px solid var(--line);
+  box-shadow:0 -6px 18px rgba(0,0,0,.08);
+}
+#runBar .btn{width:100%; max-width:688px; box-shadow:0 4px 14px rgba(22,163,74,.32);}
+body.step1{padding-bottom:calc(84px + env(safe-area-inset-bottom));}
 #schemeBtns .btn{flex:1 1 30%; padding:10px; font-size:13px;}
 #schemeBtns .btn.on{border-color:var(--green); color:var(--green); background:#f0fdf4; font-weight:600;}
 /* toast */
@@ -612,7 +624,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
     </div>
   </div>
 
-  <div class="nav">
+  <div class="nav" id="runBar">
     <button class="btn" id="btnRun">🚀 开始识别并打码</button>
   </div>
 </section>
@@ -665,7 +677,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 
 <footer style="text-align:center; color:#9ca3af; font-size:12px; padding:20px 0 30px;">
   图片仅在手机本地处理，不会上传 · 完全离线可用<br>
-  <span style="opacity:.85;">版本 <span id="verText">v1.5</span></span>
+  <span style="opacity:.85;">版本 <span id="verText">v1.6</span></span>
 </footer>
 
 <input type="file" id="fileInput" multiple hidden>
@@ -811,7 +823,7 @@ label.switch{position:relative; width:44px; height:26px; flex:none; cursor:point
 <script>
 "use strict";
 /* 工具版本号：每次更新递增（页脚与导出文件名共用） */
-const TOOL_VER = "v1.5";
+const TOOL_VER = "v1.6";
 /* ================= 内嵌引擎资源（由构建脚本注入；PaddleOCR + onnxruntime-web，完全离线） ================= */
 const ORT_JS = "/*__ORT_JS_JSON__*/";
 const ORT_WASM_GZ = "/*__ORT_WASM_GZ_B64__*/";
@@ -2342,6 +2354,7 @@ function closeOcrText() { $("ocrOverlay").classList.add("hidden"); }
 function setStep(n) {
   S.step = n;
   for (let i = 1; i <= 3; i++) $("sec" + i).classList.toggle("hidden", i !== n);
+  document.body.classList.toggle("step1", n === 1);   // 第 1 步底部悬浮条需要给正文留出空间
   document.querySelectorAll(".steps .step").forEach((el, i) => el.classList.toggle("active", i + 1 === n));
   if (n === 3) {
     S.cur = Math.max(0, S.cur);
